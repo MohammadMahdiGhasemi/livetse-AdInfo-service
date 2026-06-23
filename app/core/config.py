@@ -28,13 +28,18 @@ class Settings(BaseSettings):
 
     REDIS_URL: str
     DATABASE_URL: str
-    BASE_URL:str
+    BASE_URL: str
     DATABASE_NAME: Optional[str] = None
 
     # ---- Admin panel (sqladmin) ----
     ADMIN_USERNAME: str = "admin"
-    ADMIN_PASSWORD: str               # اجباری: باید در فایل env تنظیم شود
-    SECRET_KEY: Optional[str] = None  # برای امضای کوکی session پنل ادمین
+    ADMIN_PASSWORD: str
+    SECRET_KEY: Optional[str] = None
+
+    # ---- Upload Service ----
+    UPLOAD_SERVICE_URL: str
+    UPLOAD_SERVICE_API_KEY: str
+    BANNERS_UPLOAD_FOLDER: str = "banners"
 
     @field_validator("DATABASE_URL", "BASE_URL", mode="before")
     @classmethod

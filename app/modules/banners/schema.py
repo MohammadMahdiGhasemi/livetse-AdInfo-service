@@ -46,6 +46,25 @@ class BannerResponse(BannerBase):
     model_config = {"from_attributes": True}
 
 
+class BannerUploadResponse(BaseModel):
+    id: UUID
+    title: str
+    image_url: str
+    image_name: Optional[str] = None
+    image_folder: Optional[str] = None
+    image_size: Optional[int] = None
+    image_type: Optional[str] = None
+    link_url: str
+    platform: BannerPlatform
+    start_at: datetime
+    expire_at: datetime
+    sort_order: int
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class PaginationParams(BaseModel):
     page: int = Field(default=1, ge=1)
     size: int = Field(default=20, ge=1, le=100)

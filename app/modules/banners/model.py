@@ -12,6 +12,10 @@ class Banner(Base, TimestampMixin):
 
     title = Column(String(255), nullable=False)
     image_url = Column(Text, nullable=False)
+    image_name = Column(String(255), nullable=True)
+    image_folder = Column(String(100), nullable=True)
+    image_size = Column(Integer, nullable=True)
+    image_type = Column(String(100), nullable=True)
     alt_text = Column(String(255), nullable=True)
     link_url = Column(Text, nullable=False)
 

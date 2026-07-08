@@ -36,10 +36,14 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str
     SECRET_KEY: Optional[str] = None
 
+    # ---- JWT (user authentication) ----
+    JWT_SECRET: Optional[str] = None
+
     # ---- Upload Service ----
     UPLOAD_SERVICE_URL: str
     UPLOAD_SERVICE_API_KEY: str
     BANNERS_UPLOAD_FOLDER: str = "banners"
+    ANNOUNCEMENTS_UPLOAD_FOLDER: str = "announcements"
 
     @field_validator("DATABASE_URL", "BASE_URL", mode="before")
     @classmethod
@@ -63,6 +67,15 @@ if not settings.SECRET_KEY:
     print(
         "[WARN] SECRET_KEY is not set - generated a temporary one. "
         "Admin sessions will reset on every restart.",
+        file=sys.stderr,
+    )
+
+if not settings.JWT_SECRET:
+    import secrets as _secrets
+    settings.JWT_SECRET = _secrets.token_urlsafe(48)
+    print(
+        "[WARN] JWT_SECRET is not set - generated a temporary one. "
+        "User JWTs from other services will not validate.",
         file=sys.stderr,
     )
 

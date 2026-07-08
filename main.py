@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.core.database import init_db
 from app.modules.announcements.router import router as announcements_router
+from app.modules.announcements.admin import router as announcements_admin_router
 from app.modules.banners.router import router as banners_router
 from app.modules.banners.admin import router as banners_admin_router
 from app.modules.ads.router import router as ads_router
@@ -26,6 +27,7 @@ app = FastAPI(
 )
 
 app.include_router(announcements_router, prefix="/announcements")
+app.include_router(announcements_admin_router, prefix="/announcements")
 app.include_router(banners_router, prefix="/banners")
 app.include_router(banners_admin_router, prefix="/banners")
 app.include_router(ads_router, prefix="/ads")

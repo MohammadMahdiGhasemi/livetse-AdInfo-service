@@ -31,8 +31,9 @@ class UploadServiceClient:
         self,
         file: UploadFile,
         folder: Optional[str] = None,
+        default_folder: Optional[str] = None,
     ) -> dict:
-        target_folder = folder or settings.BANNERS_UPLOAD_FOLDER
+        target_folder = folder or default_folder or settings.BANNERS_UPLOAD_FOLDER
 
         async with httpx.AsyncClient(timeout=UPLOAD_TIMEOUT) as client:
             files = {"file": (file.filename, await file.read(), file.content_type)}

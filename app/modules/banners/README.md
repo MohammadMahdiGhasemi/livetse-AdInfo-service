@@ -1,6 +1,6 @@
 # Banners Module
 
-Banner management service for the Livetse AdInfo platform. Handles CRUD operations for promotional banners with image upload via the Livetse Upload Service.
+Banner management service for the Livetse Promotion platform. Handles CRUD operations for promotional banners with image upload via the Livetse Upload Service.
 
 ## Overview
 

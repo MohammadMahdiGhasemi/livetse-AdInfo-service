@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Livetse AdInfo Service",
+    title="Livetse Promotion Service",
     lifespan=lifespan,
 )
 

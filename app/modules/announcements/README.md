@@ -1,6 +1,6 @@
 # Announcements Module
 
-Announcement management for the Livetse AdInfo platform. Time-bounded, targetable messages shown on landing, dashboard, extension, and mobile.
+Announcement management for the Livetse Promotion platform. Time-bounded, targetable messages shown on landing, dashboard, extension, and mobile.
 
 ## Overview
 

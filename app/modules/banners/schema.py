@@ -8,7 +8,10 @@ from app.shared.enums import BannerPlatform
 
 class BannerBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
-    image_url: str = Field(..., min_length=1)
+    # The upload flow fills image_url from upload service output AFTER the
+    # file is posted; allow empty on create so the upload endpoint can pass
+    # through model validation before it knows the final URL.
+    image_url: str = Field(default="", min_length=0)
     alt_text: Optional[str] = Field(None, max_length=255)
     link_url: str = Field(..., min_length=1)
 
@@ -26,7 +29,10 @@ class BannerCreate(BannerBase):
 
 class BannerUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
-    image_url: Optional[str] = Field(None, min_length=1)
+    # Empty strings may arrive on update when the client only wants to
+    # change other fields and not touch the image — the upload flow will
+    # overwrite image_url afterwards if a new file is present.
+    image_url: Optional[str] = Field(None, min_length=0)
     alt_text: Optional[str] = Field(None, max_length=255)
     link_url: Optional[str] = Field(None, min_length=1)
 

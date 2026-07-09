@@ -5,6 +5,8 @@ from typing import Optional
 
 from app.core.database import get_session
 from app.core.config import settings
+from app.shared.enums import BannerPlatform
+from app.services.upload_client import UploadServiceError
 from .service import BannerService
 from .schema import (
     BannerCreate,
@@ -98,18 +100,39 @@ async def create_banner_with_upload(
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid date format. Use ISO 8601.")
 
+    # Validate platform against the same enum used elsewhere. Without this,
+    # a bad value like "tablet" would reach Pydantic and 500 with a
+    # ValidationError; better to 422 here with a clean message.
+    try:
+        platform_enum = BannerPlatform(platform)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid platform '{platform}'. Allowed: "
+                   f"{[p.value for p in BannerPlatform]}",
+        )
+
     data = BannerCreate(
         title=title,
         image_url="",
         alt_text=alt_text,
         link_url=link_url,
-        platform=platform,
+        platform=platform_enum,
         start_at=start_dt,
         expire_at=expire_dt,
         sort_order=sort_order,
         is_active=is_active,
     )
-    return await service.create_banner_with_upload(db, data, file)
+    try:
+        return await service.create_banner_with_upload(db, data, file)
+    except UploadServiceError as e:
+        # Surface upload-service failures as proper 502 Bad Gateway instead
+        # of leaking the raw exception as a 500.
+        logger.error("Upload service failed: %s", e.detail)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Upload service failed: {e.detail}",
+        )
 
 
 # -------------------------
@@ -156,7 +179,14 @@ async def update_banner_with_upload(
     if link_url is not None:
         update_fields["link_url"] = link_url
     if platform is not None:
-        update_fields["platform"] = platform
+        try:
+            update_fields["platform"] = BannerPlatform(platform)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid platform '{platform}'. Allowed: "
+                       f"{[p.value for p in BannerPlatform]}",
+            )
     if start_at is not None:
         try:
             update_fields["start_at"] = datetime.fromisoformat(start_at)
@@ -173,7 +203,14 @@ async def update_banner_with_upload(
         update_fields["is_active"] = is_active
 
     data = BannerUpdate(**update_fields)
-    banner = await service.update_banner_with_upload(db, banner_id, data, file)
+    try:
+        banner = await service.update_banner_with_upload(db, banner_id, data, file)
+    except UploadServiceError as e:
+        logger.error("Upload service failed during update: %s", e.detail)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Upload service failed: {e.detail}",
+        )
     if not banner:
         raise HTTPException(status_code=404, detail="Banner not found")
     return banner

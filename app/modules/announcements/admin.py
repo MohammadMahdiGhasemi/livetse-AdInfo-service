@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_session
+from app.shared.enums import AnnouncementSection, AnnouncementVisibility
+from app.services.upload_client import UploadServiceError
 
 from .service import AnnouncementService
 from .schema import (
@@ -46,8 +48,12 @@ async def verify_admin_authorization(authorization: Optional[str] = Header(None)
     response_model=PaginatedAnnouncementResponse,
 )
 async def list_announcements(
-    section: Optional[str] = Query(default=None),
-    visibility: Optional[str] = Query(default=None),
+    # Type these as the real enums so FastAPI rejects bad values with a
+    # 422 (matching the public /latest and /history endpoints). Previously
+    # these were raw Optional[str], which let garbage reach the repo and
+    # crash on `section.value`.
+    section: Optional[AnnouncementSection] = Query(default=None),
+    visibility: Optional[AnnouncementVisibility] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
     subscription_type: Optional[str] = Query(default=None),
     data_tier: Optional[str] = Query(default=None),
@@ -202,7 +208,14 @@ async def create_announcement_with_upload(
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
 
-    return await service.create_announcement_with_upload(db, data, file)
+    try:
+        return await service.create_announcement_with_upload(db, data, file)
+    except UploadServiceError as e:
+        logger.error("Upload service failed: %s", e.detail)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Upload service failed: {e.detail}",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +320,16 @@ async def update_announcement_with_upload(
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
 
-    announcement = await service.update_announcement_with_upload(
-        db, announcement_id, data, file
-    )
+    try:
+        announcement = await service.update_announcement_with_upload(
+            db, announcement_id, data, file
+        )
+    except UploadServiceError as e:
+        logger.error("Upload service failed during update: %s", e.detail)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Upload service failed: {e.detail}",
+        )
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
     return announcement

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, DateTime, Boolean, Integer, Date, ForeignKey, UniqueConstraint,Text
 from sqlalchemy.dialects.postgresql import UUID
-from shared.base_model import Base, TimestampMixin, generate_uuid
+from app.shared.base_model import Base, TimestampMixin, generate_uuid
 
 
 class AdCampaign(Base, TimestampMixin):

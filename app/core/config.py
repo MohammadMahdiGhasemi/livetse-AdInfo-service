@@ -12,7 +12,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 APP_NAME = os.getenv("APP_NAME", "test")
-ENV_FILE_PATH = BASE_DIR / f".env.{APP_NAME}"
+#ENV_FILE_PATH = BASE_DIR / f".env.{APP_NAME}"
+ENV_FILE_PATH = BASE_DIR / f".env"
 
 if not ENV_FILE_PATH.exists():
     print(f"[ERROR] Environment file not found at {ENV_FILE_PATH}", file=sys.stderr)
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
     UPLOAD_SERVICE_API_KEY: str
     BANNERS_UPLOAD_FOLDER: str = "banners"
     ANNOUNCEMENTS_UPLOAD_FOLDER: str = "announcements"
+    ADS_UPLOAD_FOLDER: str = "ads"
 
     @field_validator("DATABASE_URL", "BASE_URL", mode="before")
     @classmethod

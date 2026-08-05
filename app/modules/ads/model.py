@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, DateTime, Boolean, Integer, Date, ForeignKey, UniqueConstraint,Text
+from sqlalchemy import Column, String, DateTime, Boolean, Integer, Date, ForeignKey, UniqueConstraint, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from app.shared.base_model import Base, TimestampMixin, generate_uuid
 
 
@@ -14,6 +15,8 @@ class AdCampaign(Base, TimestampMixin):
     expire_at = Column(DateTime(timezone=True))
 
     is_active = Column(Boolean, default=True)
+
+    assets = relationship("AdAsset", back_populates="campaign", cascade="all, delete-orphan")
 
 
 
@@ -32,6 +35,8 @@ class AdAsset(Base, TimestampMixin):
     title = Column(String(255), nullable=True)
     image_url = Column(Text)
     link_url = Column(Text)
+
+    campaign = relationship("AdCampaign", back_populates="assets")
 
 
 

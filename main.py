@@ -8,6 +8,7 @@ from app.modules.announcements.admin import router as announcements_admin_router
 from app.modules.banners.router import router as banners_router
 from app.modules.banners.admin import router as banners_admin_router
 from app.modules.ads.router import router as ads_router
+from app.modules.ads.admin import router as ads_admin_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,3 +32,4 @@ app.include_router(announcements_admin_router, prefix="/announcements")
 app.include_router(banners_router, prefix="/banners")
 app.include_router(banners_admin_router, prefix="/banners")
 app.include_router(ads_router, prefix="/ads")
+app.include_router(ads_admin_router, prefix="/ads")

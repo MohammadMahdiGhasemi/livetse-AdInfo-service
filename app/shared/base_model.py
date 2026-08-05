@@ -1,6 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import Column, DateTime
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -10,9 +10,35 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    """created_at / updated_at columns stored as TIMESTAMP WITH TIME ZONE.
+
+    Defaults use ``datetime.now(timezone.utc)`` so the values are timezone-
+    aware at write time, matching the column type. ``datetime.utcnow()`` is
+    deprecated in Python 3.12+ and returns a naive datetime which can
+    confuse comparisons against tz-aware values read back from the DB.
+    """
+
+    def _utcnow(ctx):
+        # SQLAlchemy always passes an ExecutionContext-like object here;
+        # the parameter just has to be named so the wrapper can call us.
+        return datetime.now(timezone.utc)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        nullable=False,
+    )
 
 
 def generate_uuid():
+    """Returns a UUID4 *string*. The DB column is ``UUID(as_uuid=True)``,
+    but asyncpg/SQLAlchemy accept both string and ``uuid.UUID`` objects for
+    bound parameters, so a string is fine here. Tests that need to compare
+    against the DB can wrap with ``uuid.UUID(...)``."""
     return str(uuid.uuid4())

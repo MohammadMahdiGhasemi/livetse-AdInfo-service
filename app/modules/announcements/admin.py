@@ -10,7 +10,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.security import require_admin as verify_admin_authorization
+from app.core.security import require_admin
 from app.shared.enums import AnnouncementSection, AnnouncementVisibility
 from app.services.upload_client import UploadServiceError
 
@@ -58,7 +58,7 @@ async def list_announcements(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await service.get_admin_list(
         db,
@@ -87,7 +87,7 @@ async def list_announcements(
 async def get_announcement(
     announcement_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     announcement = await service.get_announcement(db, announcement_id)
     if not announcement:
@@ -106,7 +106,7 @@ async def get_announcement(
 async def create_announcement(
     data: AnnouncementCreate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await service.create_announcement(db, data)
 
@@ -154,7 +154,7 @@ async def create_announcement_with_upload(
     target_devices: Optional[str] = Form(default=""),
     is_active: bool = Form(default=True),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     from app.shared.enums import AnnouncementSection, AnnouncementVisibility
     from pydantic import ValidationError
@@ -219,7 +219,7 @@ async def update_announcement(
     announcement_id: UUID,
     data: AnnouncementUpdate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     try:
         announcement = await service.update_announcement(db, announcement_id, data)
@@ -255,7 +255,7 @@ async def update_announcement_with_upload(
     target_devices: Optional[str] = Form(default=None),
     is_active: Optional[bool] = Form(default=None),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     from app.shared.enums import AnnouncementSection, AnnouncementVisibility
     from pydantic import ValidationError
@@ -334,7 +334,7 @@ async def update_announcement_with_upload(
 async def delete_announcement(
     announcement_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     ok = await service.delete_announcement(db, announcement_id)
     if not ok:

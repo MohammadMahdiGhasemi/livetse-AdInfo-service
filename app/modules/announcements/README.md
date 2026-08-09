@@ -52,11 +52,11 @@ Final boolean: `data_tier_matched AND live_tread_access_matched AND user_data_gr
 Add to your `.env.test` (or relevant env file):
 
 ```env
-JWT_SECRET=<shared-secret-with-token-issuer>
+JWT_JWKS_URL=https://auth.example.com/.well-known/jwks.json
 ANNOUNCEMENTS_UPLOAD_FOLDER=announcements
 ```
 
-If `JWT_SECRET` is not set, the service generates a temporary one at startup and prints `[WARN]`. User JWTs from other services will then fail validation.
+JWTs are verified with RS256. Configure `JWT_JWKS_URL` (preferred) or a static RSA public key. Claims are only used after signature and expiry validation.
 
 ### Database
 
@@ -125,7 +125,7 @@ GET /announcements/history?section=DASHBOARD&visibility=PRIVATE&page=1&limit=20
 
 All admin endpoints require:
 ```
-Authorization: Bearer <ADMIN_PASSWORD>
+Authorization: Bearer <RS256 JWT with an allowed admin role>
 ```
 
 #### List Announcements (filters: data_tier instead of role)

@@ -7,8 +7,9 @@ FastAPI service for announcements, banners and ad campaigns/assets/stats.
 This version adds:
 
 - strict environment-based configuration with production safety checks;
-- shared constant-time admin Bearer authentication;
-- stricter JWT validation with optional issuer/audience enforcement;
+- RS256 Bearer JWT verification using JWKS/static public keys;
+- role-based admin authorization from verified JWT claims;
+- optional issuer/audience enforcement and automatic JWKS key rotation support;
 - reusable pooled `httpx.AsyncClient` for the upload service;
 - upload MIME/type and size limits without reading the whole file into RAM;
 - database connection pool configuration and graceful shutdown;
@@ -28,8 +29,9 @@ Copy `.env.example` to your secret/config system. Do **not** commit real secrets
 Required values include:
 
 - `DATABASE_URL` — must use `postgresql+asyncpg://...`
-- `ADMIN_PASSWORD` — legacy variable name; treated as an admin API secret, minimum 16 chars in production
-- `JWT_SECRET` — minimum 32 chars in production
+- `JWT_JWKS_URL` — preferred identity-service JWKS endpoint for RS256 verification/key rotation
+- `JWT_PUBLIC_KEY` / `JWT_PUBLIC_KEY_PATH` — optional static-key fallback when JWKS is unavailable
+- `ADMIN_ROLES` — comma-separated roles allowed to access admin endpoints (default `ADMIN,SUPER_ADMIN`)
 - `UPLOAD_SERVICE_URL`
 - `UPLOAD_SERVICE_API_KEY` — minimum 16 chars in production
 - `TRUSTED_HOSTS` — explicit hostnames in production, not `*`
@@ -138,7 +140,7 @@ With the defaults (`2 × (10 + 10)`), the service may consume up to about 40 DB 
 
 `FORWARDED_ALLOW_IPS` defaults to `127.0.0.1`. Set it only to the IP/CIDR of the trusted reverse proxy/container network. Do not use `*` when the service is directly reachable from untrusted networks.
 
-TLS should normally terminate at your ingress/reverse proxy. Restrict admin endpoints at the network layer as well as with the application Bearer secret when possible.
+TLS should normally terminate at your ingress/reverse proxy. Admin endpoints require a verified RS256 Bearer token whose `role` is included in `ADMIN_ROLES`; network-layer restrictions are still recommended.
 
 ## Upload service
 
@@ -164,6 +166,8 @@ The default allowed types are JPEG, PNG, WebP and GIF. Upload-service upstream e
 - [ ] `alembic upgrade head` completed successfully.
 - [ ] `/health/live` and `/health/ready` pass behind the deployed ingress.
 - [ ] Upload service connectivity/API key tested.
+- [ ] `JWT_JWKS_URL` (preferred) or a static RSA public key is configured.
 - [ ] JWT issuer/audience configured if those claims are part of the authentication contract.
+- [ ] `ADMIN_ROLES` matches the roles issued by the identity service.
 - [ ] DB pool size checked against worker/replica count.
 - [ ] Logs are collected from stdout and `X-Request-ID` is propagated by the gateway.

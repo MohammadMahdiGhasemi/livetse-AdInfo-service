@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import settings
 from app.core.database import check_db, close_db, init_db
 from app.core.logging import configure_logging
+from app.core.jwks import jwks_client
 from app.core.middleware import RequestContextMiddleware
 from app.services.upload_client import upload_client
 from app.modules.announcements.router import router as announcements_router
@@ -24,9 +25,11 @@ configure_logging()
 async def lifespan(app: FastAPI):
     await init_db()
     await upload_client.start()
+    await jwks_client.start()
     try:
         yield
     finally:
+        await jwks_client.close()
         await upload_client.close()
         await close_db()
 

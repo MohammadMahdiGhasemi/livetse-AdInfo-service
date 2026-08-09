@@ -87,7 +87,7 @@ Returns banners that are active and within their time window, sorted by `sort_or
 All admin endpoints require the `Authorization` header:
 
 ```
-Authorization: Bearer {ADMIN_PASSWORD}
+Authorization: Bearer {RS256_JWT}
 ```
 
 #### List All Banners (Paginated)
@@ -246,7 +246,7 @@ Automatically deletes the associated image from WordPress.
 
 ```bash
 curl -X POST http://localhost:8000/banners/admin/upload \
-  -H "Authorization: Bearer your-admin-password" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@banner.jpg" \
   -F "title=Summer Sale" \
   -F "link_url=https://example.com/sale" \
@@ -267,7 +267,7 @@ curl http://localhost:8000/banners/?platform=landing
 
 ```bash
 curl -X PUT http://localhost:8000/banners/admin/{banner_id} \
-  -H "Authorization: Bearer your-admin-password" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title": "Winter Sale"}'
 ```
@@ -276,7 +276,7 @@ curl -X PUT http://localhost:8000/banners/admin/{banner_id} \
 
 ```bash
 curl -X DELETE http://localhost:8000/banners/admin/{banner_id} \
-  -H "Authorization: Bearer your-admin-password"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ## Error Responses

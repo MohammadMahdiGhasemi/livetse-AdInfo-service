@@ -10,7 +10,7 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.security import require_admin as verify_admin_authorization
+from app.core.security import require_admin
 from app.shared.enums import AdPlatform
 from app.services.upload_client import UploadServiceError
 
@@ -59,7 +59,7 @@ async def list_campaigns(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await campaign_service.get_all_campaigns(
         db,
@@ -82,7 +82,7 @@ async def list_campaigns(
 async def get_campaign(
     campaign_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.get_campaign(db, campaign_id)
     if not campaign:
@@ -101,7 +101,7 @@ async def get_campaign(
 async def create_campaign(
     data: AdCampaignCreate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await campaign_service.create_campaign(db, data)
 
@@ -117,7 +117,7 @@ async def update_campaign(
     campaign_id: UUID,
     data: AdCampaignUpdate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     try:
         campaign = await campaign_service.update_campaign(db, campaign_id, data)
@@ -135,7 +135,7 @@ async def update_campaign(
 async def delete_campaign(
     campaign_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.delete_campaign(db, campaign_id)
     if not campaign:
@@ -159,7 +159,7 @@ async def list_assets(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.get_campaign(db, campaign_id)
     if not campaign:
@@ -177,7 +177,7 @@ async def list_assets(
 async def get_asset(
     asset_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     asset = await asset_service.get_asset(db, asset_id)
     if not asset:
@@ -200,7 +200,7 @@ async def create_asset(
     image_url: str = Form(default=""),
     link_url: str = Form(default=""),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.get_campaign(db, campaign_id)
     if not campaign:
@@ -239,7 +239,7 @@ async def create_asset_with_upload(
     title: Optional[str] = Form(default=None),
     link_url: str = Form(default=""),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.get_campaign(db, campaign_id)
     if not campaign:
@@ -273,7 +273,7 @@ async def create_asset_with_upload(
 async def delete_asset(
     asset_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     asset = await asset_service.delete_asset(db, asset_id)
     if not asset:
@@ -296,7 +296,7 @@ async def delete_asset(
 async def upsert_stats(
     data: AdStatsBulkRequest,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     for item in data.stats:
         asset = await asset_service.get_asset(db, item.asset_id)
@@ -330,7 +330,7 @@ async def get_asset_stats(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     asset = await asset_service.get_asset(db, asset_id)
     if not asset:
@@ -350,7 +350,7 @@ async def get_campaign_stats(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     campaign = await campaign_service.get_campaign(db, campaign_id)
     if not campaign:

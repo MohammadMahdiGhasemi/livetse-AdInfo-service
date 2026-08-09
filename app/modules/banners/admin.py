@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from app.core.database import get_session
-from app.core.security import require_admin as verify_admin_authorization
+from app.core.security import require_admin
 from app.shared.enums import BannerPlatform
 from app.services.upload_client import UploadServiceError
 from .service import BannerService
@@ -34,7 +34,7 @@ async def list_banners(
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await service.get_all_banners(db, page, size)
 
@@ -46,7 +46,7 @@ async def list_banners(
 async def get_banner(
     banner_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     banner = await service.get_banner(db, banner_id)
     if not banner:
@@ -61,7 +61,7 @@ async def get_banner(
 async def create_banner(
     data: BannerCreate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     return await service.create_banner(db, data)
 
@@ -81,7 +81,7 @@ async def create_banner_with_upload(
     sort_order: int = Form(default=0),
     is_active: bool = Form(default=True),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     from datetime import datetime
 
@@ -129,7 +129,7 @@ async def update_banner(
     banner_id: UUID,
     data: BannerUpdate,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     try:
         banner = await service.update_banner(db, banner_id, data)
@@ -156,7 +156,7 @@ async def update_banner_with_upload(
     sort_order: Optional[int] = Form(None),
     is_active: Optional[bool] = Form(None),
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     from datetime import datetime
 
@@ -211,7 +211,7 @@ async def update_banner_with_upload(
 async def delete_banner(
     banner_id: UUID,
     db: AsyncSession = Depends(get_session),
-    _: str = Depends(verify_admin_authorization),
+    _ = Depends(require_admin),
 ):
     banner = await service.delete_banner(db, banner_id)
     if not banner:

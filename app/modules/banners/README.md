@@ -1,329 +1,648 @@
 # Banners Module
 
-Banner management service for the Livetse Promotion platform. Handles CRUD operations for promotional banners with image upload via the Livetse Upload Service.
+The Banners module manages scheduled promotional banners for Livetse clients.
 
-## Overview
+It provides:
 
-Banners are displayed on the landing page and browser extension. Each banner has a scheduled time window (`start_at` → `expire_at`), a platform target, and an image stored in WordPress via the Upload Service.
+- platform-specific banner delivery;
+- active-time-window filtering;
+- ordering through `sort_order`;
+- administrative CRUD operations;
+- external image upload;
+- persisted upload metadata;
+- safe image replacement;
+- best-effort remote file cleanup.
 
-## Setup
+Module path:
 
-### Environment Variables
-
-Add to your `.env.test` (or relevant env file):
-
-```env
-# Upload Service connection
-UPLOAD_SERVICE_URL=http://localhost:8000
-UPLOAD_SERVICE_API_KEY=your-upload-service-api-key
-BANNERS_UPLOAD_FOLDER=banners
+```text
+app/modules/banners/
 ```
 
-### Database
+---
 
-The `banners` table is created automatically via SQLAlchemy models. Columns:
+# Overview
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | UUID | Primary key |
-| `title` | VARCHAR(255) | Banner title |
-| `image_url` | TEXT | Full URL to served image |
-| `image_name` | VARCHAR(255) | Original filename in WordPress |
-| `image_folder` | VARCHAR(100) | WordPress folder name |
-| `image_size` | INTEGER | File size in bytes |
-| `image_type` | VARCHAR(100) | MIME type |
-| `alt_text` | VARCHAR(255) | Image alt text |
-| `link_url` | TEXT | Click-through URL |
-| `platform` | VARCHAR(50) | `landing` or `extension` |
-| `start_at` | TIMESTAMPTZ | Display start time |
-| `expire_at` | TIMESTAMPTZ | Display end time |
-| `is_active` | BOOLEAN | Enable/disable banner |
-| `sort_order` | INTEGER | Display priority (lower = first) |
-| `created_at` | TIMESTAMPTZ | Record creation time |
-| `updated_at` | TIMESTAMPTZ | Last modification time |
+A banner is a promotional image associated with:
 
-Index: `idx_banner_active_time` on `(is_active, start_at, expire_at)`.
-
-## API Endpoints
-
-### Public
-
-#### Get Active Banners
-
+```text
+title
+image
+destination URL
+platform
+display window
+sort order
+active state
 ```
+
+Example:
+
+```json
+{
+  "title": "Summer Campaign",
+  "image_url": "https://cdn.example.com/banner.jpg",
+  "alt_text": "Summer campaign",
+  "link_url": "https://example.com/summer",
+  "platform": "landing",
+  "start_at": "2026-08-09T00:00:00Z",
+  "expire_at": "2026-09-01T00:00:00Z",
+  "sort_order": 0,
+  "is_active": true
+}
+```
+
+---
+
+# Architecture
+
+```text
+Client
+   |
+   v
+router.py / admin.py
+   |
+   v
+BannerService
+   |
+   +-------------------+
+   |                   |
+   v                   v
+BannerRepository   UploadServiceClient
+   |                   |
+   v                   v
+PostgreSQL         Upload Service
+```
+
+---
+
+# Platforms
+
+Supported values:
+
+```text
+landing
+extension
+```
+
+Defined by:
+
+```python
+BannerPlatform
+```
+
+Invalid platform values return:
+
+```http
+422 Unprocessable Entity
+```
+
+---
+
+# Database Model
+
+Table:
+
+```text
+banners
+```
+
+| Column | Type | Required | Description |
+|---|---|---:|---|
+| `id` | UUID | yes | Primary key |
+| `title` | VARCHAR(255) | yes | Banner title |
+| `image_url` | TEXT | yes | Public image URL |
+| `image_name` | VARCHAR(255) | no | Remote upload filename |
+| `image_folder` | VARCHAR(100) | no | Remote upload folder |
+| `image_size` | INTEGER | no | File size |
+| `image_type` | VARCHAR(100) | no | MIME type |
+| `alt_text` | VARCHAR(255) | no | Accessibility text |
+| `link_url` | TEXT | yes | Destination URL |
+| `platform` | VARCHAR(50) | yes | Banner platform |
+| `start_at` | TIMESTAMPTZ | yes | Start time |
+| `expire_at` | TIMESTAMPTZ | yes | Expiration time |
+| `is_active` | BOOLEAN | yes | Activation flag |
+| `sort_order` | INTEGER | yes | Display ordering |
+| `created_at` | TIMESTAMPTZ | yes | Creation time |
+| `updated_at` | TIMESTAMPTZ | yes | Modification time |
+
+Constraints:
+
+```text
+expire_at > start_at
+sort_order >= 0
+```
+
+Index:
+
+```text
+idx_banner_active_time
+```
+
+on:
+
+```text
+is_active
+start_at
+expire_at
+```
+
+---
+
+# Public API
+
+## Get Active Banners
+
+```http
 GET /banners/?platform={platform}
 ```
 
-Returns banners that are active and within their time window, sorted by `sort_order`.
+Authentication is not required.
 
-| Param | Type | Required | Values |
-|-------|------|----------|--------|
-| `platform` | string | Yes | `landing`, `extension` |
+Example:
 
-**Response** `200`:
+```http
+GET /banners/?platform=landing
+```
+
+The service returns banners satisfying:
+
+```text
+is_active = true
+platform = requested platform
+start_at <= now
+expire_at >= now
+```
+
+Ordering:
+
+```text
+sort_order ASC
+```
+
+Example response:
+
 ```json
 [
   {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "title": "Summer Sale",
-    "image_url": "https://example.com/wp-json/cue/v1/serve/banners/sale.jpg",
-    "alt_text": "Summer sale banner",
-    "link_url": "https://example.com/sale",
+    "title": "Summer Campaign",
+    "image_url": "https://cdn.example.com/banner.jpg",
+    "alt_text": "Summer campaign",
+    "link_url": "https://example.com/summer",
     "platform": "landing",
-    "start_at": "2024-06-01T00:00:00Z",
-    "expire_at": "2024-08-31T23:59:59Z",
+    "start_at": "2026-08-09T00:00:00Z",
+    "expire_at": "2026-09-01T00:00:00Z",
     "sort_order": 0,
     "is_active": true,
-    "created_at": "2024-05-15T10:30:00Z",
-    "updated_at": "2024-05-15T10:30:00Z"
+    "id": "4289bd99-f900-4442-8fb1-2abb0cef104e",
+    "created_at": "2026-08-08T14:00:00Z",
+    "updated_at": "2026-08-08T14:00:00Z"
   }
 ]
 ```
 
 ---
 
-### Admin
+# Admin Authentication
 
-All admin endpoints require the `Authorization` header:
+Every admin endpoint requires:
 
+```http
+Authorization: Bearer <RS256 JWT>
 ```
-Authorization: Bearer {RS256_JWT}
+
+The token must be valid and its normalized `role` must exist in:
+
+```env
+ADMIN_ROLES=ADMIN,SUPER_ADMIN
 ```
 
-#### List All Banners (Paginated)
+Valid JWT with a non-admin role:
 
+```http
+403 Forbidden
 ```
+
+---
+
+# List Banners
+
+```http
+GET /banners/admin
+```
+
+Parameters:
+
+| Name | Default | Range |
+|---|---:|---|
+| `page` | `1` | `>= 1` |
+| `size` | `20` | `1..100` |
+
+Example:
+
+```http
 GET /banners/admin?page=1&size=20
 ```
 
-| Param | Type | Default | Range |
-|-------|------|---------|-------|
-| `page` | int | 1 | ≥ 1 |
-| `size` | int | 20 | 1–100 |
+Response:
 
-**Response** `200`:
 ```json
 {
-  "items": [...],
-  "total": 45,
+  "items": [],
+  "total": 0,
   "page": 1,
   "size": 20,
-  "pages": 3
+  "pages": 0
+}
+```
+
+Items are ordered by:
+
+```text
+sort_order ASC
+```
+
+---
+
+# Get Banner
+
+```http
+GET /banners/admin/{banner_id}
+```
+
+Not found:
+
+```http
+404 Not Found
+```
+
+```json
+{
+  "detail": "Banner not found"
 }
 ```
 
 ---
 
-#### Get Banner by ID
+# Create Banner with JSON
 
-```
-GET /banners/admin/{banner_id}
-```
-
-**Response** `200`: Banner object  
-**Response** `404`: `{"detail": "Banner not found"}`
-
----
-
-#### Create Banner (JSON)
-
-```
+```http
 POST /banners/admin
 Content-Type: application/json
+Authorization: Bearer <JWT>
+```
 
+Example:
+
+```json
 {
-  "title": "Summer Sale",
-  "image_url": "https://example.com/image.jpg",
-  "alt_text": "Summer sale",
-  "link_url": "https://example.com/sale",
+  "title": "Summer Campaign",
+  "image_url": "https://cdn.example.com/banner.jpg",
+  "alt_text": "Summer campaign",
+  "link_url": "https://example.com/summer",
   "platform": "landing",
-  "start_at": "2024-06-01T00:00:00Z",
-  "expire_at": "2024-08-31T23:59:59Z",
+  "start_at": "2026-08-09T00:00:00Z",
+  "expire_at": "2026-09-01T00:00:00Z",
   "sort_order": 0,
   "is_active": true
 }
 ```
 
-**Response** `201`: Banner object
+Response:
+
+```http
+201 Created
+```
+
+`image_url` should normally be supplied when using the JSON route.
+
+The schema technically permits an empty `image_url` because the same model is reused by the upload flow before the final upload URL is known.
 
 ---
 
-#### Create Banner (with file upload)
+# Create Banner with Image Upload
 
-```
+```http
 POST /banners/admin/upload
 Content-Type: multipart/form-data
+```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `file` | file | Yes | Image file |
-| `title` | string | Yes | Banner title |
-| `link_url` | string | Yes | Click-through URL |
-| `platform` | string | Yes | `landing` or `extension` |
-| `start_at` | string | Yes | ISO 8601 datetime |
-| `expire_at` | string | Yes | ISO 8601 datetime |
-| `alt_text` | string | No | Image alt text |
-| `sort_order` | int | No | Default: 0 |
-| `is_active` | bool | No | Default: true |
+Fields:
 
-**Response** `201`:
+| Field | Required |
+|---|---:|
+| `file` | yes |
+| `title` | yes |
+| `alt_text` | no |
+| `link_url` | yes |
+| `platform` | yes |
+| `start_at` | yes |
+| `expire_at` | yes |
+| `sort_order` | no |
+| `is_active` | no |
+
+Example:
+
+```bash
+curl -X POST \
+  http://localhost:8000/banners/admin/upload \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "file=@banner.jpg" \
+  -F "title=Summer Campaign" \
+  -F "alt_text=Summer campaign banner" \
+  -F "link_url=https://example.com/summer" \
+  -F "platform=landing" \
+  -F "start_at=2026-08-09T00:00:00+00:00" \
+  -F "expire_at=2026-09-01T00:00:00+00:00" \
+  -F "sort_order=0" \
+  -F "is_active=true"
+```
+
+Folder:
+
+```env
+BANNERS_UPLOAD_FOLDER=banners
+```
+
+The Upload Service response metadata is persisted in:
+
+```text
+image_url
+image_name
+image_folder
+image_size
+image_type
+```
+
+---
+
+# Upload Lifecycle
+
+## Creation
+
+```text
+Upload image
+    |
+    v
+Receive image metadata
+    |
+    v
+Insert banner in PostgreSQL
+```
+
+If the database insert fails after the upload succeeds:
+
+```text
+best-effort delete newly uploaded file
+```
+
+---
+
+## Replacement
+
+Banner image replacement intentionally uploads the new image **before** deleting the old image.
+
+Flow:
+
+```text
+Existing banner points to old image
+           |
+           v
+Upload replacement image
+           |
+           v
+Update PostgreSQL record
+           |
+           +-- DB failure
+           |      |
+           |      v
+           |   delete newly uploaded image
+           |
+           +-- DB success
+                  |
+                  v
+           delete old image best-effort
+```
+
+This avoids leaving a live banner pointing to an image that was deleted before the replacement was successfully committed.
+
+---
+
+# Update Banner with JSON
+
+```http
+PUT /banners/admin/{banner_id}
+```
+
+Every field is optional.
+
+Example:
+
 ```json
 {
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "title": "Summer Sale",
-  "image_url": "https://example.com/wp-json/cue/v1/serve/banners/sale.jpg",
-  "image_name": "sale.jpg",
-  "image_folder": "banners",
-  "image_size": 1048576,
-  "image_type": "image/jpeg",
-  "link_url": "https://example.com/sale",
-  "platform": "landing",
-  "start_at": "2024-06-01T00:00:00Z",
-  "expire_at": "2024-08-31T23:59:59Z",
-  "sort_order": 0,
-  "is_active": true,
-  "created_at": "2024-05-15T10:30:00Z"
+  "title": "Updated Campaign",
+  "sort_order": 5,
+  "is_active": false
 }
 ```
 
----
-
-#### Update Banner (JSON)
-
-```
-PUT /banners/admin/{banner_id}
-Content-Type: application/json
-
-{
-  "title": "Updated Title",
-  "sort_order": 5
-}
-```
-
-All fields are optional — only provided fields are updated.
-
-**Response** `200`: Updated banner object  
-**Response** `404`: `{"detail": "Banner not found"}`
+The service validates the final time range after combining existing and new values.
 
 ---
 
-#### Update Banner (with new file)
+# Update Banner with New File
 
-```
+```http
 PUT /banners/admin/{banner_id}/upload
 Content-Type: multipart/form-data
 ```
 
-Same fields as create upload. The old image is automatically deleted from WordPress.
+Required:
 
-**Response** `200`: Updated banner object with new image metadata
+```text
+file
+```
+
+Optional:
+
+```text
+title
+alt_text
+link_url
+platform
+start_at
+expire_at
+sort_order
+is_active
+```
+
+Example:
+
+```bash
+curl -X PUT \
+  http://localhost:8000/banners/admin/4289bd99-f900-4442-8fb1-2abb0cef104e/upload \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "file=@new-banner.webp" \
+  -F "title=Updated Summer Campaign"
+```
 
 ---
 
-#### Delete Banner
+# Delete Banner
 
-```
+```http
 DELETE /banners/admin/{banner_id}
 ```
 
-Automatically deletes the associated image from WordPress.
+Database deletion is performed first.
 
-**Response** `200`:
+After the database row is removed, the remote image is deleted on a best-effort basis when:
+
+```text
+image_name
+AND
+image_folder
+```
+
+are available.
+
+Successful response:
+
 ```json
 {
   "message": "Banner deleted",
-  "id": "550e8400-e29b-41d4-a716-446655440000"
+  "id": "4289bd99-f900-4442-8fb1-2abb0cef104e"
 }
 ```
 
-**Response** `404`: `{"detail": "Banner not found"}`
+If remote cleanup fails, the database deletion remains successful and the orphaned upload is logged.
+
+This behavior is intentional: an orphaned upload is safer than deleting an image first and then failing to delete the corresponding database resource.
 
 ---
 
-## cURL Examples
+# Validation
 
-### Create banner with image upload
+## Title
 
-```bash
-curl -X POST http://localhost:8000/banners/admin/upload \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -F "file=@banner.jpg" \
-  -F "title=Summer Sale" \
-  -F "link_url=https://example.com/sale" \
-  -F "platform=landing" \
-  -F "start_at=2024-06-01T00:00:00Z" \
-  -F "expire_at=2024-08-31T23:59:59Z" \
-  -F "alt_text=Summer sale banner" \
-  -F "sort_order=0"
+```text
+1..255 characters
 ```
 
-### Get active banners
+## Alt text
 
-```bash
-curl http://localhost:8000/banners/?platform=landing
+Maximum:
+
+```text
+255 characters
 ```
 
-### Update banner title
+## Link URL
 
-```bash
-curl -X PUT http://localhost:8000/banners/admin/{banner_id} \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Winter Sale"}'
+Must contain at least one character.
+
+## Sort Order
+
+```text
+sort_order >= 0
 ```
 
-### Delete banner
+## Time Range
 
-```bash
-curl -X DELETE http://localhost:8000/banners/admin/{banner_id} \
-  -H "Authorization: Bearer $ACCESS_TOKEN"
+```text
+expire_at > start_at
 ```
 
-## Error Responses
+## Platform
 
-| Status | Meaning |
-|--------|---------|
-| `401` | Missing `Authorization` header |
-| `403` | Invalid password |
+```text
+landing
+extension
+```
+
+---
+
+# Upload Validation
+
+Default accepted MIME types:
+
+```text
+image/jpeg
+image/png
+image/webp
+image/gif
+```
+
+Maximum size:
+
+```text
+10 MB
+```
+
+Configurable using:
+
+```env
+MAX_UPLOAD_SIZE_MB
+ALLOWED_UPLOAD_CONTENT_TYPES
+```
+
+---
+
+# Error Responses
+
+| HTTP | Meaning |
+|---:|---|
+| `401` | Missing, invalid, or expired JWT |
+| `403` | User does not have an allowed admin role |
 | `404` | Banner not found |
-| `422` | Validation error (invalid date, missing fields, etc.) |
-| `502` | Upload Service unreachable |
+| `413` | File exceeds upload limit |
+| `415` | Unsupported MIME type |
+| `422` | Invalid request/platform/time range |
+| `502` | Upload Service unavailable/rejected request |
+| `504` | Upload Service timed out |
 
-## Architecture
+---
 
-```
-Client Request
-      │
-      ▼
-admin.py (FastAPI Router)
-      │
-      ▼
-BannerService
-      │
-      ├──▶ BannerRepository (PostgreSQL)
-      │
-      └──▶ UploadServiceClient (WordPress)
-               │
-               ▼
-         Upload Service → WordPress CUE Plugin
+# Environment Variables
+
+```env
+BANNERS_UPLOAD_FOLDER=banners
+
+UPLOAD_SERVICE_URL=https://upload.example.com
+UPLOAD_SERVICE_API_KEY=...
+
+MAX_UPLOAD_SIZE_MB=10
+ALLOWED_UPLOAD_CONTENT_TYPES=image/jpeg,image/png,image/webp,image/gif
 ```
 
-- **Create with upload**: File → Upload Service → WordPress → URL saved to DB
-- **Update with upload**: Delete old image → Upload new → Update DB
-- **Delete**: Delete image from WordPress → Delete DB record
+Authentication:
 
-## Files
-
+```env
+JWT_JWKS_URL=https://auth.example.com/.well-known/jwks.json
+ADMIN_ROLES=ADMIN,SUPER_ADMIN
 ```
+
+---
+
+# Files
+
+```text
 app/modules/banners/
 ├── __init__.py
-├── model.py        # SQLAlchemy model
-├── schema.py       # Pydantic schemas
-├── repo.py         # Database queries
-├── service.py      # Business logic + upload integration
-├── router.py       # Public API endpoints
-└── admin.py        # Admin API endpoints
-
-app/services/
-└── upload_client.py  # HTTP client for Upload Service
+├── admin.py
+├── model.py
+├── repo.py
+├── router.py
+├── schema.py
+├── service.py
+└── README.md
 ```
+
+Related:
+
+```text
+app/services/upload_client.py
+app/core/security.py
+app/shared/auth.py
+```
+
+---

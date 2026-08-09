@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -21,6 +21,12 @@ class BannerBase(BaseModel):
 
     sort_order: int = Field(default=0, ge=0)
     is_active: bool = True
+
+    @model_validator(mode="after")
+    def _validate_dates(self) -> "BannerBase":
+        if self.expire_at <= self.start_at:
+            raise ValueError("expire_at must be after start_at")
+        return self
 
 
 class BannerCreate(BannerBase):

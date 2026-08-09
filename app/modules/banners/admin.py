@@ -1,10 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, Header, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
+from uuid import UUID
 
 from app.core.database import get_session
-from app.core.config import settings
+from app.core.security import require_admin as verify_admin_authorization
 from app.shared.enums import BannerPlatform
 from app.services.upload_client import UploadServiceError
 from .service import BannerService
@@ -23,16 +24,6 @@ router = APIRouter(tags=["Banners-Admin"])
 service = BannerService()
 
 
-async def verify_admin_authorization(authorization: Optional[str] = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-
-    token = authorization.replace("Bearer ", "")
-    if token != settings.ADMIN_PASSWORD:
-        logger.warning("Invalid admin authorization attempt")
-        raise HTTPException(status_code=403, detail="Invalid authorization")
-
-    return token
 
 
 # -------------------------
@@ -53,7 +44,7 @@ async def list_banners(
 # -------------------------
 @router.get("/admin/{banner_id}", response_model=BannerResponse)
 async def get_banner(
-    banner_id: str,
+    banner_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -126,13 +117,8 @@ async def create_banner_with_upload(
     try:
         return await service.create_banner_with_upload(db, data, file)
     except UploadServiceError as e:
-        # Surface upload-service failures as proper 502 Bad Gateway instead
-        # of leaking the raw exception as a 500.
         logger.error("Upload service failed: %s", e.detail)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upload service failed: {e.detail}",
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 # -------------------------
@@ -140,12 +126,15 @@ async def create_banner_with_upload(
 # -------------------------
 @router.put("/admin/{banner_id}", response_model=BannerResponse)
 async def update_banner(
-    banner_id: str,
+    banner_id: UUID,
     data: BannerUpdate,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
-    banner = await service.update_banner(db, banner_id, data)
+    try:
+        banner = await service.update_banner(db, banner_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not banner:
         raise HTTPException(status_code=404, detail="Banner not found")
     return banner
@@ -156,7 +145,7 @@ async def update_banner(
 # -------------------------
 @router.put("/admin/{banner_id}/upload", response_model=BannerUploadResponse)
 async def update_banner_with_upload(
-    banner_id: str,
+    banner_id: UUID,
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
     alt_text: Optional[str] = Form(None),
@@ -207,10 +196,9 @@ async def update_banner_with_upload(
         banner = await service.update_banner_with_upload(db, banner_id, data, file)
     except UploadServiceError as e:
         logger.error("Upload service failed during update: %s", e.detail)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upload service failed: {e.detail}",
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not banner:
         raise HTTPException(status_code=404, detail="Banner not found")
     return banner
@@ -221,7 +209,7 @@ async def update_banner_with_upload(
 # -------------------------
 @router.delete("/admin/{banner_id}")
 async def delete_banner(
-    banner_id: str,
+    banner_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):

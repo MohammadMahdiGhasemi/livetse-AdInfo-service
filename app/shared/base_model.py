@@ -37,8 +37,5 @@ class TimestampMixin:
 
 
 def generate_uuid():
-    """Returns a UUID4 *string*. The DB column is ``UUID(as_uuid=True)``,
-    but asyncpg/SQLAlchemy accept both string and ``uuid.UUID`` objects for
-    bound parameters, so a string is fine here. Tests that need to compare
-    against the DB can wrap with ``uuid.UUID(...)``."""
-    return str(uuid.uuid4())
+    """Return a native UUID4 object for PostgreSQL UUID(as_uuid=True) columns."""
+    return uuid.uuid4()

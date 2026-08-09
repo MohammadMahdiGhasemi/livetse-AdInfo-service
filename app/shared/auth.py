@@ -1,20 +1,19 @@
 import logging
-from typing import Optional
 from dataclasses import dataclass
+from typing import Optional
 
-from fastapi import Header, HTTPException, status
 import jwt
+from fastapi import HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 from app.shared.enums import normalize_data_tier
 
 logger = logging.getLogger(__name__)
+_optional_bearer = HTTPBearer(auto_error=False)
 
 
 def _coerce_bool(value) -> Optional[bool]:
-    """Defensive coercion: JWTs that arrived as 'True'/'False' strings
-    (issued by older services) are normalized to real booleans. Anything
-    unrecognisable becomes None."""
     if value is None:
         return None
     if isinstance(value, bool):
@@ -22,10 +21,10 @@ def _coerce_bool(value) -> Optional[bool]:
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        v = value.strip().lower()
-        if v in {"true", "1", "yes"}:
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
             return True
-        if v in {"false", "0", "no"}:
+        if normalized in {"false", "0", "no"}:
             return False
     return None
 
@@ -41,53 +40,75 @@ class CurrentUser:
 
 
 def _decode_jwt(token: str) -> CurrentUser:
+    options = {"require": ["exp"]} if settings.JWT_REQUIRE_EXP else None
+    decode_kwargs = {
+        "key": settings.JWT_SECRET,
+        "algorithms": [settings.JWT_ALGORITHM],
+        "leeway": settings.JWT_LEEWAY_SECONDS,
+        "options": options,
+    }
+    if settings.JWT_ISSUER:
+        decode_kwargs["issuer"] = settings.JWT_ISSUER
+    if settings.JWT_AUDIENCE:
+        decode_kwargs["audience"] = settings.JWT_AUDIENCE
+    else:
+        # Do not reject a token merely because another service includes an aud
+        # claim when this service has no configured audience contract yet.
+        decode_kwargs["options"] = {
+            **(options or {}),
+            "verify_aud": False,
+        }
+
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
+        payload = jwt.decode(token, **decode_kwargs)
+    except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
-        )
-    except jwt.InvalidTokenError as e:
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except jwt.InvalidTokenError as exc:
+        logger.info("JWT validation failed: %s", exc.__class__.__name__)
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {e}"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    user_id = str(payload.get("id") or "").strip()
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     return CurrentUser(
-        id=str(payload.get("id", "")),
+        id=user_id,
         phoneNumber=payload.get("phoneNumber"),
-        # dataTier is the new normalization point — uppercase it here so
-        # downstream SQL comparisons don't have to defend against mixed case.
         dataTier=normalize_data_tier(payload.get("dataTier")),
         liveTreadAccess=_coerce_bool(payload.get("liveTreadAccess")),
         userDataGroup=payload.get("userDataGroup"),
         device=payload.get("device"),
-        # NOTE: payload 'role' is intentionally not read.
     )
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Optional[CurrentUser]:
-    """Optional JWT dependency — returns None if no header provided.
-
-    Use `require_current_user` for endpoints that demand a valid JWT."""
-    if not authorization:
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(_optional_bearer),
+) -> Optional[CurrentUser]:
+    """Optional bearer auth: missing header => anonymous, invalid token => 401."""
+    if credentials is None:
         return None
-    token = authorization.replace("Bearer ", "").strip()
-    if not token:
-        return None
-    return _decode_jwt(token)
+    return _decode_jwt(credentials.credentials)
 
 
-async def require_current_user(authorization: Optional[str] = Header(None)) -> CurrentUser:
-    """Mandatory JWT dependency — raises 401 if missing/invalid."""
-    if not authorization:
+async def require_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(_optional_bearer),
+) -> CurrentUser:
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    token = authorization.replace("Bearer ", "").strip()
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header required",
-        )
-    return _decode_jwt(token)
+    return _decode_jwt(credentials.credentials)

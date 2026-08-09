@@ -1,10 +1,8 @@
-"""Centralized model registry.
+"""Central model registry.
 
-Importing every concrete model here guarantees ``Base.metadata`` knows
-about every table before ``init_db()`` runs ``create_all``. Without this
-file, models are only registered when their owning router is imported,
-which means the lifespan event (which runs first) sees an empty
-metadata and creates no tables at all.
+Importing every concrete model guarantees ``Base.metadata`` contains the full
+schema for Alembic autogeneration/comparison and optional local development
+schema creation.
 """
 from app.modules.announcements.model import Announcement  # noqa: F401
 from app.modules.banners.model import Banner  # noqa: F401

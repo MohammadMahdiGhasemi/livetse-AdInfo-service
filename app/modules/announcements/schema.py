@@ -99,7 +99,7 @@ class AnnouncementUpdate(BaseModel):
     button_text: Optional[str] = Field(None, max_length=100)
     image_url: Optional[str] = None
 
-    sections: Optional[List[AnnouncementSection]] = None
+    sections: Optional[List[AnnouncementSection]] = Field(None, min_length=1)
     visibility: Optional[AnnouncementVisibility] = None
     subscription_types: Optional[List[str]] = None
 

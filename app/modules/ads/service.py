@@ -158,7 +158,17 @@ class AdAssetService:
             image_url=upload_data.get("url") or data.get("image_url", ""),
             link_url=data.get("link_url", ""),
         )
-        return await self.repo.create(db, asset)
+        try:
+            return await self.repo.create(db, asset)
+        except Exception:
+            new_name = upload_data.get("name")
+            new_folder = upload_data.get("folder")
+            if new_name and new_folder:
+                try:
+                    await upload_client.delete_file(new_folder, new_name)
+                except UploadServiceError:
+                    logger.warning("Failed to clean up ad upload after DB failure")
+            raise
 
     async def delete_asset(
         self, db: AsyncSession, asset_id: str

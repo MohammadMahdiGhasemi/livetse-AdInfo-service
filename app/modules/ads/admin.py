@@ -1,15 +1,16 @@
 import logging
 from datetime import date, datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import (
-    APIRouter, Depends, File, Form, Header, HTTPException,
+    APIRouter, Depends, File, Form, HTTPException,
     Query, UploadFile,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_session
+from app.core.security import require_admin as verify_admin_authorization
 from app.shared.enums import AdPlatform
 from app.services.upload_client import UploadServiceError
 
@@ -37,14 +38,6 @@ stats_service = AdStatsService()
 # ---------------------------------------------------------------------------
 # Admin authorization
 # ---------------------------------------------------------------------------
-async def verify_admin_authorization(authorization: Optional[str] = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    token = authorization.replace("Bearer ", "")
-    if token != settings.ADMIN_PASSWORD:
-        logger.warning("Invalid admin authorization attempt on ads route")
-        raise HTTPException(status_code=403, detail="Invalid authorization")
-    return token
 
 
 # ===========================================================================
@@ -87,7 +80,7 @@ async def list_campaigns(
     response_model=AdCampaignResponse,
 )
 async def get_campaign(
-    campaign_id: str,
+    campaign_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -121,7 +114,7 @@ async def create_campaign(
     response_model=AdCampaignResponse,
 )
 async def update_campaign(
-    campaign_id: str,
+    campaign_id: UUID,
     data: AdCampaignUpdate,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
@@ -140,7 +133,7 @@ async def update_campaign(
 # ---------------------------------------------------------------------------
 @router.delete("/admin/{campaign_id}")
 async def delete_campaign(
-    campaign_id: str,
+    campaign_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -162,7 +155,7 @@ async def delete_campaign(
     response_model=PaginatedAdAssetResponse,
 )
 async def list_assets(
-    campaign_id: str,
+    campaign_id: UUID,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
@@ -182,7 +175,7 @@ async def list_assets(
     response_model=AdAssetResponse,
 )
 async def get_asset(
-    asset_id: str,
+    asset_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -201,7 +194,7 @@ async def get_asset(
     status_code=201,
 )
 async def create_asset(
-    campaign_id: str,
+    campaign_id: UUID,
     platform: str = Form(...),
     title: Optional[str] = Form(default=None),
     image_url: str = Form(default=""),
@@ -240,7 +233,7 @@ async def create_asset(
     status_code=201,
 )
 async def create_asset_with_upload(
-    campaign_id: str,
+    campaign_id: UUID,
     file: UploadFile = File(...),
     platform: str = Form(...),
     title: Optional[str] = Form(default=None),
@@ -270,10 +263,7 @@ async def create_asset_with_upload(
         return await asset_service.create_asset_with_upload(db, campaign_id, data, file)
     except UploadServiceError as e:
         logger.error("Upload service failed: %s", e.detail)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upload service failed: {e.detail}",
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +271,7 @@ async def create_asset_with_upload(
 # ---------------------------------------------------------------------------
 @router.delete("/admin/assets/{asset_id}")
 async def delete_asset(
-    asset_id: str,
+    asset_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -336,7 +326,7 @@ async def upsert_stats(
     response_model=AdStatsResponse,
 )
 async def get_asset_stats(
-    asset_id: str,
+    asset_id: UUID,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),
@@ -356,7 +346,7 @@ async def get_asset_stats(
     response_model=AdStatsResponse,
 )
 async def get_campaign_stats(
-    campaign_id: str,
+    campaign_id: UUID,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_session),

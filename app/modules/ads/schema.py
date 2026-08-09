@@ -88,7 +88,7 @@ class AdStatsRecord(BaseModel):
 
 
 class AdStatsBulkItem(BaseModel):
-    asset_id: str
+    asset_id: UUID
     date: date
     views_count: int = Field(default=0, ge=0)
     clicks_count: int = Field(default=0, ge=0)

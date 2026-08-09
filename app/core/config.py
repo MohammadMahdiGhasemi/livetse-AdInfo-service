@@ -1,84 +1,165 @@
-# config.py
-import os
-import sys
-from pathlib import Path
-from typing import Optional
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from dotenv import load_dotenv
+from __future__ import annotations
 
+import os
+from pathlib import Path
+from typing import Literal, Optional
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = BASE_DIR.parent
 
 
-APP_NAME = os.getenv("APP_NAME", "test")
-#ENV_FILE_PATH = BASE_DIR / f".env.{APP_NAME}"
-ENV_FILE_PATH = BASE_DIR / f".env"
+def _env_file() -> str | None:
+    """Load a local env file only when it actually exists.
 
-if not ENV_FILE_PATH.exists():
-    print(f"[ERROR] Environment file not found at {ENV_FILE_PATH}", file=sys.stderr)
-else:
-    load_dotenv(dotenv_path=ENV_FILE_PATH, override=True)
+    Production deployments should inject environment variables through the
+    orchestrator / secret store. APP_ENV_FILE can be used explicitly for local
+    or staging runs without coupling the service to a hard-coded filename.
+    """
+    explicit = os.getenv("APP_ENV_FILE")
+    if explicit:
+        path = Path(explicit).expanduser()
+        return str(path)
+
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    candidates = (
+        PROJECT_DIR / f".env.{app_env}",
+        PROJECT_DIR / ".env",
+        BASE_DIR / f".env.{app_env}",
+        BASE_DIR / ".env",
+    )
+    for path in candidates:
+        if path.exists():
+            return str(path)
+    return None
+
+
+ENV_FILE_PATH = _env_file()
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(ENV_FILE_PATH),
+        env_file=ENV_FILE_PATH,
         env_file_encoding="utf-8",
-        extra="ignore"  
+        extra="ignore",
+        case_sensitive=False,
     )
 
-    REDIS_URL: str
+    APP_NAME: str = "livetse-promotion-service"
+    APP_ENV: Literal["development", "test", "staging", "production"] = "development"
+    APP_VERSION: str = "1.0.0"
+
     DATABASE_URL: str
-    BASE_URL: str
+    REDIS_URL: Optional[str] = None
+    BASE_URL: Optional[str] = None
     DATABASE_NAME: Optional[str] = None
 
-    # ---- Admin panel (sqladmin) ----
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800
+    AUTO_CREATE_SCHEMA: bool = False
+
+    # Kept for API compatibility with the existing deployment contract.
+    # ADMIN_PASSWORD is treated as an API secret, not an interactive password.
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str
     SECRET_KEY: Optional[str] = None
 
-    # ---- JWT (user authentication) ----
-    JWT_SECRET: Optional[str] = None
+    JWT_SECRET: str
+    JWT_ALGORITHM: Literal["HS256"] = "HS256"
+    JWT_ISSUER: Optional[str] = None
+    JWT_AUDIENCE: Optional[str] = None
+    JWT_REQUIRE_EXP: bool = True
+    JWT_LEEWAY_SECONDS: int = 10
 
-    # ---- Upload Service ----
     UPLOAD_SERVICE_URL: str
     UPLOAD_SERVICE_API_KEY: str
+    UPLOAD_CONNECT_TIMEOUT: float = 5.0
+    UPLOAD_READ_TIMEOUT: float = 60.0
+    MAX_UPLOAD_SIZE_MB: int = 10
+    ALLOWED_UPLOAD_CONTENT_TYPES: str = "image/jpeg,image/png,image/webp,image/gif"
     BANNERS_UPLOAD_FOLDER: str = "banners"
     ANNOUNCEMENTS_UPLOAD_FOLDER: str = "announcements"
     ADS_UPLOAD_FOLDER: str = "ads"
 
-    @field_validator("DATABASE_URL", "BASE_URL", mode="before")
+    LOG_LEVEL: str = "INFO"
+    LOG_JSON: bool = True
+    ENABLE_DOCS: Optional[bool] = None
+    CORS_ORIGINS: str = ""
+    TRUSTED_HOSTS: str = "*"
+
+    @field_validator(
+        "DATABASE_URL",
+        "BASE_URL",
+        "UPLOAD_SERVICE_URL",
+        "ADMIN_PASSWORD",
+        "JWT_SECRET",
+        "UPLOAD_SERVICE_API_KEY",
+        mode="before",
+    )
     @classmethod
-    def _strip_whitespace(cls, v):
-        # مقادیر env گاهی فاصله‌ی ابتدایی دارند (مثل "DATABASE_URL= postgres...")
-        return v.strip() if isinstance(v, str) else v
+    def _strip_whitespace(cls, value):
+        return value.strip() if isinstance(value, str) else value
 
-try:
-    settings = Settings()
-    print(f"[OK] Settings loaded successfully for {APP_NAME} from {ENV_FILE_PATH.name}")
-except Exception as e:
-    print(f"[ERROR] Failed to load settings: {e}", file=sys.stderr)
-    print(f"   Make sure your .env file is correct and exists at: {ENV_FILE_PATH}", file=sys.stderr)
-    print("   Required keys include ADMIN_PASSWORD (and ideally SECRET_KEY).", file=sys.stderr)
-    sys.exit(1)
+    @field_validator("DB_POOL_SIZE", "DB_MAX_OVERFLOW", "DB_POOL_TIMEOUT", "DB_POOL_RECYCLE")
+    @classmethod
+    def _validate_non_negative_ints(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("database pool settings must be non-negative")
+        return value
+
+    @field_validator("MAX_UPLOAD_SIZE_MB")
+    @classmethod
+    def _validate_upload_size(cls, value: int) -> int:
+        if value <= 0 or value > 100:
+            raise ValueError("MAX_UPLOAD_SIZE_MB must be between 1 and 100")
+        return value
+
+    @model_validator(mode="after")
+    def _production_safety_checks(self) -> "Settings":
+        if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
+            raise ValueError("DATABASE_URL must use the postgresql+asyncpg driver")
+
+        if self.APP_ENV == "production":
+            if len(self.ADMIN_PASSWORD) < 16:
+                raise ValueError("ADMIN_PASSWORD must be at least 16 characters in production")
+            if len(self.JWT_SECRET) < 32:
+                raise ValueError("JWT_SECRET must be at least 32 characters in production")
+            if len(self.UPLOAD_SERVICE_API_KEY) < 16 or self.UPLOAD_SERVICE_API_KEY == "dev-placeholder":
+                raise ValueError("UPLOAD_SERVICE_API_KEY is not production-safe")
+            if self.AUTO_CREATE_SCHEMA:
+                raise ValueError("AUTO_CREATE_SCHEMA must be false in production; use Alembic migrations")
+            if "*" in self.trusted_hosts:
+                raise ValueError("TRUSTED_HOSTS must be explicit in production")
+            if "*" in self.cors_origins:
+                raise ValueError("CORS_ORIGINS cannot contain '*' in production")
+        return self
+
+    @property
+    def docs_enabled(self) -> bool:
+        if self.ENABLE_DOCS is not None:
+            return self.ENABLE_DOCS
+        return self.APP_ENV != "production"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [item.strip() for item in self.CORS_ORIGINS.split(",") if item.strip()]
+
+    @property
+    def trusted_hosts(self) -> list[str]:
+        hosts = [item.strip() for item in self.TRUSTED_HOSTS.split(",") if item.strip()]
+        return hosts or ["*"]
+
+    @property
+    def allowed_upload_content_types(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.ALLOWED_UPLOAD_CONTENT_TYPES.split(",")
+            if item.strip()
+        }
 
 
-if not settings.SECRET_KEY:
-    import secrets as _secrets
-    settings.SECRET_KEY = _secrets.token_urlsafe(48)
-    print(
-        "[WARN] SECRET_KEY is not set - generated a temporary one. "
-        "Admin sessions will reset on every restart.",
-        file=sys.stderr,
-    )
-
-if not settings.JWT_SECRET:
-    import secrets as _secrets
-    settings.JWT_SECRET = _secrets.token_urlsafe(48)
-    print(
-        "[WARN] JWT_SECRET is not set - generated a temporary one. "
-        "User JWTs from other services will not validate.",
-        file=sys.stderr,
-    )
-
-
+settings = Settings()

@@ -121,7 +121,17 @@ class AnnouncementService:
             display_expire_at=data.display_expire_at,
             is_active=data.is_active,
         )
-        return await self.repo.create(db, obj)
+        try:
+            return await self.repo.create(db, obj)
+        except Exception:
+            new_name = upload_data.get("name")
+            new_folder = upload_data.get("folder")
+            if new_name and new_folder:
+                try:
+                    await upload_client.delete_file(new_folder, new_name)
+                except UploadServiceError:
+                    logger.warning("Failed to clean up announcement upload after DB failure")
+            raise
 
     async def update_announcement(self, db, announcement_id: str, data: AnnouncementUpdate):
         announcement = await self.repo.get_by_id(db, announcement_id)
@@ -129,6 +139,11 @@ class AnnouncementService:
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+        new_start = update_data.get("display_start_at", announcement.display_start_at)
+        new_expire = update_data.get("display_expire_at", announcement.display_expire_at)
+        if new_start and new_expire and new_expire <= new_start:
+            raise ValueError("display_expire_at must be after display_start_at")
+
         if "sections" in update_data and update_data["sections"] is not None:
             update_data["sections"] = [s.value for s in update_data["sections"]]
 
@@ -164,15 +179,38 @@ class AnnouncementService:
         upload_data = upload_result.get("data", {}) or {}
 
         update_data = data.model_dump(exclude_unset=True)
+        new_start = update_data.get("display_start_at", announcement.display_start_at)
+        new_expire = update_data.get("display_expire_at", announcement.display_expire_at)
+        if new_start and new_expire and new_expire <= new_start:
+            new_name = upload_data.get("name")
+            new_folder = upload_data.get("folder")
+            if new_name and new_folder:
+                try:
+                    await upload_client.delete_file(new_folder, new_name)
+                except UploadServiceError:
+                    logger.warning("Failed to clean invalid announcement upload")
+            raise ValueError("display_expire_at must be after display_start_at")
+
         if "sections" in update_data and update_data["sections"] is not None:
             update_data["sections"] = [s.value for s in update_data["sections"]]
         update_data["image_url"] = upload_data.get("url") or announcement.image_url
 
-        for key, value in update_data.items():
-            setattr(announcement, key, value)
+        try:
+            for key, value in update_data.items():
+                setattr(announcement, key, value)
+            await db.commit()
+            await db.refresh(announcement)
+        except Exception:
+            await db.rollback()
+            new_name = upload_data.get("name")
+            new_folder = upload_data.get("folder")
+            if new_name and new_folder:
+                try:
+                    await upload_client.delete_file(new_folder, new_name)
+                except UploadServiceError:
+                    logger.warning("Failed to clean up announcement upload after DB failure")
+            raise
 
-        await db.commit()
-        await db.refresh(announcement)
         logger.info("Updated announcement with new image: %s", announcement_id)
         return announcement
 

@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Index, String, Text,
+    Boolean, CheckConstraint, Column, DateTime, Enum, Index, String, Text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
@@ -42,6 +42,10 @@ class Announcement(Base, TimestampMixin):
     is_active = Column(Boolean, default=True, nullable=False)
 
     __table_args__ = (
+        CheckConstraint(
+            "display_expire_at > display_start_at",
+            name="ck_announcement_time_range",
+        ),
         # B-tree indexes for the scalar filter columns used in admin / public
         Index("ix_announcements_visibility", "visibility"),
         Index("ix_announcements_is_active", "is_active"),

@@ -1,15 +1,16 @@
 import logging
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import (
-    APIRouter, Depends, File, Form, Header, HTTPException,
+    APIRouter, Depends, File, Form, HTTPException,
     Query, UploadFile,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_session
+from app.core.security import require_admin as verify_admin_authorization
 from app.shared.enums import AnnouncementSection, AnnouncementVisibility
 from app.services.upload_client import UploadServiceError
 
@@ -30,14 +31,6 @@ service = AnnouncementService()
 # ---------------------------------------------------------------------------
 # Bearer-token admin authorization (mirrors banners/admin.py)
 # ---------------------------------------------------------------------------
-async def verify_admin_authorization(authorization: Optional[str] = Header(None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    token = authorization.replace("Bearer ", "")
-    if token != settings.ADMIN_PASSWORD:
-        logger.warning("Invalid admin authorization attempt on announcements route")
-        raise HTTPException(status_code=403, detail="Invalid authorization")
-    return token
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +85,7 @@ async def list_announcements(
     response_model=AdminAnnouncementResponse,
 )
 async def get_announcement(
-    announcement_id: str,
+    announcement_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
@@ -212,10 +205,7 @@ async def create_announcement_with_upload(
         return await service.create_announcement_with_upload(db, data, file)
     except UploadServiceError as e:
         logger.error("Upload service failed: %s", e.detail)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upload service failed: {e.detail}",
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
 
 # ---------------------------------------------------------------------------
@@ -226,12 +216,15 @@ async def create_announcement_with_upload(
     response_model=AdminAnnouncementResponse,
 )
 async def update_announcement(
-    announcement_id: str,
+    announcement_id: UUID,
     data: AnnouncementUpdate,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):
-    announcement = await service.update_announcement(db, announcement_id, data)
+    try:
+        announcement = await service.update_announcement(db, announcement_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
     return announcement
@@ -245,7 +238,7 @@ async def update_announcement(
     response_model=AdminAnnouncementResponse,
 )
 async def update_announcement_with_upload(
-    announcement_id: str,
+    announcement_id: UUID,
     file: UploadFile = File(...),
     text: Optional[str] = Form(default=None),
     sections: Optional[str] = Form(default=None),
@@ -326,10 +319,9 @@ async def update_announcement_with_upload(
         )
     except UploadServiceError as e:
         logger.error("Upload service failed during update: %s", e.detail)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upload service failed: {e.detail}",
-        )
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not announcement:
         raise HTTPException(status_code=404, detail="Announcement not found")
     return announcement
@@ -340,7 +332,7 @@ async def update_announcement_with_upload(
 # ---------------------------------------------------------------------------
 @router.delete("/admin/{announcement_id}")
 async def delete_announcement(
-    announcement_id: str,
+    announcement_id: UUID,
     db: AsyncSession = Depends(get_session),
     _: str = Depends(verify_admin_authorization),
 ):

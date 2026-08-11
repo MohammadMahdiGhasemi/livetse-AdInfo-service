@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.auth import CurrentUser
-from app.shared.enums import AnnouncementSection, AnnouncementVisibility
+from app.shared.enums import AnnouncementSection, AnnouncementType, AnnouncementVisibility
 
 from .model import Announcement
 
@@ -150,6 +150,7 @@ class AnnouncementRepository:
         self,
         db: AsyncSession,
         *,
+        type: Optional[AnnouncementType] = None,
         section: Optional[AnnouncementSection] = None,
         visibility: Optional[AnnouncementVisibility] = None,
         is_active: Optional[bool] = None,
@@ -165,6 +166,8 @@ class AnnouncementRepository:
     ) -> Tuple[List[Announcement], int]:
         clauses = []
 
+        if type is not None:
+            clauses.append(Announcement.type == type)
         if section is not None:
             clauses.append(Announcement.sections.any(section.value))
         if visibility is not None:

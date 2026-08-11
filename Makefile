@@ -7,7 +7,7 @@ compile:
 	python -m compileall -q app main.py alembic
 
 test: compile
-	pytest -q
+	python -m pytest -q
 
 migrate:
 	alembic upgrade head

@@ -14,7 +14,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
-        for key in ("request_id", "method", "path", "status_code", "duration_ms"):
+        for key in ("request_id", "method", "path", "status_code", "duration_ms", "client_ip"):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value
@@ -24,21 +24,23 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging() -> None:
+    root = logging.getLogger()
+    root.handlers.clear()
+
+    if not settings.LOG_ENABLED:
+        root.addHandler(logging.NullHandler())
+        root.setLevel(logging.CRITICAL + 1)
+        return
+
     level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     if settings.LOG_JSON:
         handler.setFormatter(JsonFormatter())
     else:
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
 
-    root = logging.getLogger()
-    root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(level)
 
-    # Avoid leaking SQL values and duplicate access logs; request middleware
-    # below provides one consistent access event per request.
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").disabled = True
+    logging.getLogger("sqlalchemy.engine").setLevel(level if settings.LOG_SQL_ENABLED else logging.WARNING)
+    logging.getLogger("uvicorn.access").disabled = not settings.LOG_UVICORN_ACCESS_ENABLED

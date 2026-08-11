@@ -42,6 +42,7 @@ class AnnouncementService:
         self,
         db,
         *,
+        type,
         section,
         visibility,
         is_active,
@@ -57,6 +58,7 @@ class AnnouncementService:
     ):
         items, total = await self.repo.search(
             db,
+            type=type,
             section=section,
             visibility=visibility,
             is_active=is_active,
@@ -78,6 +80,7 @@ class AnnouncementService:
     async def create_announcement(self, db, data: AnnouncementCreate) -> Announcement:
         obj = Announcement(
             text=data.text,
+            type=data.type,
             link=data.link,
             button_text=data.button_text,
             image_url=data.image_url,
@@ -107,6 +110,7 @@ class AnnouncementService:
 
         obj = Announcement(
             text=data.text,
+            type=data.type,
             link=data.link,
             button_text=data.button_text,
             image_url=upload_data.get("url") or data.image_url,

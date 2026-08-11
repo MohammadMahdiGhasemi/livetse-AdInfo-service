@@ -4,7 +4,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 from app.shared.base_model import Base, TimestampMixin, generate_uuid
-from app.shared.enums import AnnouncementVisibility
+from app.shared.enums import AnnouncementType, AnnouncementVisibility
 
 
 class Announcement(Base, TimestampMixin):
@@ -13,6 +13,12 @@ class Announcement(Base, TimestampMixin):
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
 
     text = Column(Text, nullable=False)
+    type = Column(
+        Enum(AnnouncementType, name="announcement_type"),
+        nullable=False,
+        default=AnnouncementType.info,
+        server_default=AnnouncementType.info.value,
+    )
     link = Column(Text, nullable=True)
     button_text = Column(String(100), nullable=True)
     image_url = Column(Text, nullable=True)
@@ -47,6 +53,7 @@ class Announcement(Base, TimestampMixin):
             name="ck_announcement_time_range",
         ),
         # B-tree indexes for the scalar filter columns used in admin / public
+        Index("ix_announcements_type", "type"),
         Index("ix_announcements_visibility", "visibility"),
         Index("ix_announcements_is_active", "is_active"),
         Index("ix_announcements_display_start_at", "display_start_at"),

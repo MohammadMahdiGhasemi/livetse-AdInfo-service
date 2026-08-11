@@ -1,6 +1,10 @@
-from sqlalchemy import Column, String, DateTime, Boolean, Integer, Date, ForeignKey, UniqueConstraint, Text, CheckConstraint, Index
+from sqlalchemy import (
+    Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey, Index,
+    Integer, String, Text, UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+
 from app.shared.base_model import Base, TimestampMixin, generate_uuid
 
 
@@ -8,12 +12,9 @@ class AdCampaign(Base, TimestampMixin):
     __tablename__ = "ad_campaigns"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-
     client_name = Column(String(255), nullable=False)
-
     start_at = Column(DateTime(timezone=True), nullable=False)
     expire_at = Column(DateTime(timezone=True), nullable=False)
-
     is_active = Column(Boolean, default=True, nullable=False)
 
     assets = relationship("AdAsset", back_populates="campaign", cascade="all, delete-orphan")
@@ -24,38 +25,46 @@ class AdCampaign(Base, TimestampMixin):
     )
 
 
-
-
-
-
 class AdAsset(Base, TimestampMixin):
     __tablename__ = "ad_assets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-
-    campaign_id = Column(UUID(as_uuid=True), ForeignKey("ad_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
-
+    campaign_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("ad_campaigns.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     platform = Column(String(50), nullable=False, index=True)
-
+    position = Column(Integer, nullable=False)
     title = Column(String(255), nullable=True)
     image_url = Column(Text, nullable=False)
     link_url = Column(Text, nullable=False)
 
     campaign = relationship("AdCampaign", back_populates="assets")
 
-
+    __table_args__ = (
+        CheckConstraint("position >= 1", name="ck_ad_asset_position_positive"),
+        UniqueConstraint(
+            "campaign_id", "platform", "position",
+            name="uq_ad_asset_campaign_platform_position",
+        ),
+        Index("ix_ad_assets_platform_position", "platform", "position"),
+    )
 
 
 class AdStats(Base):
     __tablename__ = "ad_stats"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-
-    asset_id = Column(UUID(as_uuid=True), ForeignKey("ad_assets.id", ondelete="CASCADE"), nullable=False, index=True)
-
+    asset_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("ad_assets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     views_count = Column(Integer, default=0, nullable=False)
     clicks_count = Column(Integer, default=0, nullable=False)
-
     date = Column(Date, nullable=False, index=True)
 
     __table_args__ = (

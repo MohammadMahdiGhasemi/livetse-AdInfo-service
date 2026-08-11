@@ -26,6 +26,8 @@ class UploadServiceClient:
         self._client: httpx.AsyncClient | None = None
 
     async def start(self) -> None:
+        if not settings.ENABLE_UPLOADS:
+            return
         if self._client is None:
             timeout = httpx.Timeout(
                 connect=settings.UPLOAD_CONNECT_TIMEOUT,
@@ -33,7 +35,10 @@ class UploadServiceClient:
                 write=settings.UPLOAD_READ_TIMEOUT,
                 pool=settings.UPLOAD_CONNECT_TIMEOUT,
             )
-            limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
+            limits = httpx.Limits(
+                max_connections=settings.UPLOAD_MAX_CONNECTIONS,
+                max_keepalive_connections=settings.UPLOAD_MAX_KEEPALIVE_CONNECTIONS,
+            )
             self._client = httpx.AsyncClient(timeout=timeout, limits=limits)
 
     async def close(self) -> None:
@@ -78,6 +83,8 @@ class UploadServiceClient:
         folder: Optional[str] = None,
         default_folder: Optional[str] = None,
     ) -> dict:
+        if not settings.ENABLE_UPLOADS:
+            raise UploadServiceError(503, "Uploads are disabled")
         await self._validate_upload(file)
         target_folder = folder or default_folder or settings.BANNERS_UPLOAD_FOLDER
         client = await self._get_client()
@@ -121,6 +128,8 @@ class UploadServiceClient:
         return payload
 
     async def delete_file(self, folder: str, filename: str) -> dict:
+        if not settings.ENABLE_UPLOADS:
+            raise UploadServiceError(503, "Uploads are disabled")
         client = await self._get_client()
         safe_folder = quote(folder, safe="")
         safe_filename = quote(filename, safe="")

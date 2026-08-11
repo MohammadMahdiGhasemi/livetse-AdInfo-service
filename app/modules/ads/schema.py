@@ -7,9 +7,6 @@ from pydantic import BaseModel, Field, model_validator
 from app.shared.enums import AdPlatform
 
 
-# ---------------------------------------------------------------------------
-# Campaign schemas
-# ---------------------------------------------------------------------------
 class AdCampaignBase(BaseModel):
     client_name: str = Field(..., min_length=1, max_length=255)
     start_at: datetime
@@ -38,7 +35,6 @@ class AdCampaignResponse(AdCampaignBase):
     id: UUID
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
     model_config = {"from_attributes": True}
 
 
@@ -50,19 +46,32 @@ class PaginatedAdCampaignResponse(BaseModel):
     pages: int
 
 
-# ---------------------------------------------------------------------------
-# Asset schemas
-# ---------------------------------------------------------------------------
+class AdAssetCreate(BaseModel):
+    platform: AdPlatform
+    position: int = Field(..., ge=1)
+    title: Optional[str] = Field(None, max_length=255)
+    image_url: str = ""
+    link_url: str = ""
+
+
+class AdAssetUpdate(BaseModel):
+    platform: Optional[AdPlatform] = None
+    position: Optional[int] = Field(None, ge=1)
+    title: Optional[str] = Field(None, max_length=255)
+    image_url: Optional[str] = None
+    link_url: Optional[str] = None
+
+
 class AdAssetResponse(BaseModel):
     id: UUID
     campaign_id: UUID
-    platform: str
+    platform: AdPlatform
+    position: int
     title: Optional[str] = None
     image_url: str
     link_url: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
     model_config = {"from_attributes": True}
 
 
@@ -74,16 +83,12 @@ class PaginatedAdAssetResponse(BaseModel):
     pages: int
 
 
-# ---------------------------------------------------------------------------
-# Stats schemas
-# ---------------------------------------------------------------------------
 class AdStatsRecord(BaseModel):
     id: UUID
     asset_id: UUID
     views_count: int
     clicks_count: int
     date: date
-
     model_config = {"from_attributes": True}
 
 

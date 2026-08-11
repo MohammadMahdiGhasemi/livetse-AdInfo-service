@@ -9,7 +9,7 @@ class BannerPlatform(str, enum.Enum):
 class AnnouncementType(str, enum.Enum):
     info = "info"
     warning = "warning"
-    danger = "danger"
+    error = "error"
     success = "success"
 
 

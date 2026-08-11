@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.shared.enums import (
     ALLOWED_DATA_TIERS,
     AnnouncementSection,
+    AnnouncementType,
     AnnouncementVisibility,
     normalize_data_tier,
 )
@@ -43,6 +44,7 @@ def _validate_tier_list(values: List[str]) -> List[str]:
 # ---------------------------------------------------------------------------
 class AnnouncementBase(BaseModel):
     text: str = Field(..., min_length=1)
+    type: AnnouncementType = AnnouncementType.info
     link: Optional[str] = None
     button_text: Optional[str] = Field(None, max_length=100)
     image_url: Optional[str] = None
@@ -95,6 +97,7 @@ class AnnouncementUpdate(BaseModel):
     Every field is optional — only provided fields are updated."""
 
     text: Optional[str] = Field(None, min_length=1)
+    type: Optional[AnnouncementType] = None
     link: Optional[str] = None
     button_text: Optional[str] = Field(None, max_length=100)
     image_url: Optional[str] = None
@@ -149,6 +152,7 @@ class AnnouncementHistoryQuery(BaseModel):
 
 
 class AdminAnnouncementListQuery(BaseModel):
+    type: Optional[AnnouncementType] = None
     section: Optional[AnnouncementSection] = None
     visibility: Optional[AnnouncementVisibility] = None
     is_active: Optional[bool] = None
@@ -176,6 +180,7 @@ class AnnouncementResponse(BaseModel):
 
     id: UUID
     text: str
+    type: AnnouncementType
     link: Optional[str] = None
     button_text: Optional[str] = None
     image_url: Optional[str] = None

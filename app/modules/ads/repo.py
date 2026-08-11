@@ -6,13 +6,12 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .model import AdCampaign, AdAsset, AdStats
+from .model import AdAsset, AdCampaign, AdStats
 
 logger = logging.getLogger(__name__)
 
 
 class AdCampaignRepository:
-
     async def create(self, db: AsyncSession, campaign: AdCampaign) -> AdCampaign:
         db.add(campaign)
         await db.commit()
@@ -20,24 +19,14 @@ class AdCampaignRepository:
         logger.info("Created ad campaign: %s", campaign.id)
         return campaign
 
-    async def get_by_id(
-        self, db: AsyncSession, campaign_id: str
-    ) -> Optional[AdCampaign]:
-        result = await db.execute(
-            select(AdCampaign).filter(AdCampaign.id == campaign_id)
-        )
+    async def get_by_id(self, db: AsyncSession, campaign_id: str) -> Optional[AdCampaign]:
+        result = await db.execute(select(AdCampaign).filter(AdCampaign.id == campaign_id))
         return result.scalar_one_or_none()
 
     async def get_all_paginated(
-        self,
-        db: AsyncSession,
-        *,
-        client_name: Optional[str] = None,
-        is_active: Optional[bool] = None,
-        start_at: Optional[datetime] = None,
-        expire_at: Optional[datetime] = None,
-        page: int = 1,
-        size: int = 20,
+        self, db: AsyncSession, *, client_name: Optional[str] = None,
+        is_active: Optional[bool] = None, start_at: Optional[datetime] = None,
+        expire_at: Optional[datetime] = None, page: int = 1, size: int = 20,
     ) -> Tuple[List[AdCampaign], int]:
         clauses = []
         if client_name is not None:
@@ -51,21 +40,13 @@ class AdCampaignRepository:
 
         where = and_(*clauses) if clauses else True
         offset = (page - 1) * size
-
-        count_q = await db.execute(
-            select(func.count(AdCampaign.id)).filter(where)
-        )
+        count_q = await db.execute(select(func.count(AdCampaign.id)).filter(where))
         total = count_q.scalar() or 0
-
         result = await db.execute(
-            select(AdCampaign)
-            .filter(where)
-            .order_by(AdCampaign.created_at.desc())
-            .offset(offset)
-            .limit(size)
+            select(AdCampaign).filter(where)
+            .order_by(AdCampaign.created_at.desc()).offset(offset).limit(size)
         )
-        items = list(result.scalars().all())
-        return items, total
+        return list(result.scalars().all()), total
 
     async def delete(self, db: AsyncSession, campaign: AdCampaign) -> None:
         campaign_id = campaign.id
@@ -75,7 +56,6 @@ class AdCampaignRepository:
 
 
 class AdAssetRepository:
-
     async def create(self, db: AsyncSession, asset: AdAsset) -> AdAsset:
         db.add(asset)
         await db.commit()
@@ -83,55 +63,74 @@ class AdAssetRepository:
         logger.info("Created ad asset: %s", asset.id)
         return asset
 
-    async def get_by_id(
-        self, db: AsyncSession, asset_id: str
-    ) -> Optional[AdAsset]:
-        result = await db.execute(
-            select(AdAsset).filter(AdAsset.id == asset_id)
-        )
+    async def get_by_id(self, db: AsyncSession, asset_id: str) -> Optional[AdAsset]:
+        result = await db.execute(select(AdAsset).filter(AdAsset.id == asset_id))
         return result.scalar_one_or_none()
 
     async def get_by_campaign(
-        self,
-        db: AsyncSession,
-        campaign_id: str,
-        page: int = 1,
-        size: int = 20,
+        self, db: AsyncSession, campaign_id: str, page: int = 1, size: int = 20,
     ) -> Tuple[List[AdAsset], int]:
         offset = (page - 1) * size
-
         count_q = await db.execute(
-            select(func.count(AdAsset.id)).filter(
-                AdAsset.campaign_id == campaign_id
-            )
+            select(func.count(AdAsset.id)).filter(AdAsset.campaign_id == campaign_id)
         )
         total = count_q.scalar() or 0
-
         result = await db.execute(
-            select(AdAsset)
-            .filter(AdAsset.campaign_id == campaign_id)
-            .order_by(AdAsset.created_at.desc())
-            .offset(offset)
-            .limit(size)
+            select(AdAsset).filter(AdAsset.campaign_id == campaign_id)
+            .order_by(AdAsset.platform.asc(), AdAsset.position.asc(), AdAsset.created_at.asc())
+            .offset(offset).limit(size)
         )
-        items = list(result.scalars().all())
-        return items, total
+        return list(result.scalars().all()), total
 
-    async def get_active_by_platform(
-        self, db: AsyncSession, platform: str
-    ) -> List[AdAsset]:
-        now = datetime.now(timezone.utc)
-
+    async def get_all_by_campaign(self, db: AsyncSession, campaign_id: str) -> List[AdAsset]:
         result = await db.execute(
-            select(AdAsset)
-            .join(AdAsset.campaign)
-            .filter(
+            select(AdAsset).filter(AdAsset.campaign_id == campaign_id)
+            .order_by(AdAsset.platform.asc(), AdAsset.position.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_same_campaign_position(
+        self, db: AsyncSession, campaign_id: str, platform: str, position: int,
+        exclude_asset_id: str | None = None,
+    ) -> Optional[AdAsset]:
+        clauses = [
+            AdAsset.campaign_id == campaign_id,
+            AdAsset.platform == platform,
+            AdAsset.position == position,
+        ]
+        if exclude_asset_id is not None:
+            clauses.append(AdAsset.id != exclude_asset_id)
+        result = await db.execute(select(AdAsset).filter(*clauses).limit(1))
+        return result.scalar_one_or_none()
+
+    async def find_active_position_conflict(
+        self, db: AsyncSession, *, platform: str, position: int,
+        start_at: datetime, expire_at: datetime, exclude_campaign_id: str | None = None,
+    ) -> Optional[AdAsset]:
+        clauses = [
+            AdAsset.platform == platform,
+            AdAsset.position == position,
+            AdCampaign.is_active.is_(True),
+            AdCampaign.start_at < expire_at,
+            AdCampaign.expire_at > start_at,
+        ]
+        if exclude_campaign_id is not None:
+            clauses.append(AdAsset.campaign_id != exclude_campaign_id)
+        result = await db.execute(
+            select(AdAsset).join(AdCampaign, AdCampaign.id == AdAsset.campaign_id)
+            .filter(*clauses).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_active_by_platform(self, db: AsyncSession, platform: str) -> List[AdAsset]:
+        now = datetime.now(timezone.utc)
+        result = await db.execute(
+            select(AdAsset).join(AdAsset.campaign).filter(
                 AdAsset.platform == platform,
                 AdCampaign.is_active.is_(True),
                 AdCampaign.start_at <= now,
                 AdCampaign.expire_at >= now,
-            )
-            .order_by(AdAsset.created_at.desc())
+            ).order_by(AdAsset.position.asc(), AdAsset.created_at.asc())
         )
         return list(result.scalars().all())
 
@@ -143,87 +142,51 @@ class AdAssetRepository:
 
 
 class AdStatsRepository:
-
-    async def upsert_bulk(
-        self, db: AsyncSession, items: list[dict]
-    ) -> List[AdStats]:
+    async def upsert_bulk(self, db: AsyncSession, items: list[dict]) -> List[AdStats]:
         if not items:
             return []
-
         seen: dict[tuple, dict] = {}
         for item in items:
-            key = (item["asset_id"], str(item["date"]))
-            seen[key] = item
+            seen[(item["asset_id"], str(item["date"]))] = item
         deduped = list(seen.values())
-
         stmt = insert(AdStats).values(deduped)
         stmt = stmt.on_conflict_do_update(
             index_elements=["asset_id", "date"],
-            set_={
-                "views_count": stmt.excluded.views_count,
-                "clicks_count": stmt.excluded.clicks_count,
-            },
+            set_={"views_count": stmt.excluded.views_count, "clicks_count": stmt.excluded.clicks_count},
         )
         await db.execute(stmt)
         await db.commit()
-
         asset_ids = list({item["asset_id"] for item in deduped})
         stat_dates = list({item["date"] for item in deduped})
         result = await db.execute(
-            select(AdStats).filter(
-                AdStats.asset_id.in_(asset_ids),
-                AdStats.date.in_(stat_dates),
-            )
+            select(AdStats).filter(AdStats.asset_id.in_(asset_ids), AdStats.date.in_(stat_dates))
         )
         return list(result.scalars().all())
 
     async def get_by_asset(
-        self,
-        db: AsyncSession,
-        asset_id: str,
-        page: int = 1,
-        size: int = 20,
+        self, db: AsyncSession, asset_id: str, page: int = 1, size: int = 20,
     ) -> Tuple[List[AdStats], int]:
         offset = (page - 1) * size
-
-        count_q = await db.execute(
-            select(func.count(AdStats.id)).filter(AdStats.asset_id == asset_id)
-        )
+        count_q = await db.execute(select(func.count(AdStats.id)).filter(AdStats.asset_id == asset_id))
         total = count_q.scalar() or 0
-
         result = await db.execute(
-            select(AdStats)
-            .filter(AdStats.asset_id == asset_id)
-            .order_by(AdStats.date.desc())
-            .offset(offset)
-            .limit(size)
+            select(AdStats).filter(AdStats.asset_id == asset_id)
+            .order_by(AdStats.date.desc()).offset(offset).limit(size)
         )
-        items = list(result.scalars().all())
-        return items, total
+        return list(result.scalars().all()), total
 
     async def get_by_campaign(
-        self,
-        db: AsyncSession,
-        campaign_id: str,
-        page: int = 1,
-        size: int = 20,
+        self, db: AsyncSession, campaign_id: str, page: int = 1, size: int = 20,
     ) -> Tuple[List[AdStats], int]:
         offset = (page - 1) * size
-
         count_q = await db.execute(
-            select(func.count(AdStats.id))
-            .join(AdAsset, AdAsset.id == AdStats.asset_id)
+            select(func.count(AdStats.id)).join(AdAsset, AdAsset.id == AdStats.asset_id)
             .filter(AdAsset.campaign_id == campaign_id)
         )
         total = count_q.scalar() or 0
-
         result = await db.execute(
-            select(AdStats)
-            .join(AdAsset, AdAsset.id == AdStats.asset_id)
+            select(AdStats).join(AdAsset, AdAsset.id == AdStats.asset_id)
             .filter(AdAsset.campaign_id == campaign_id)
-            .order_by(AdStats.date.desc())
-            .offset(offset)
-            .limit(size)
+            .order_by(AdStats.date.desc()).offset(offset).limit(size)
         )
-        items = list(result.scalars().all())
-        return items, total
+        return list(result.scalars().all()), total

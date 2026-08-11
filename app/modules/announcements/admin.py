@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.security import require_admin
-from app.shared.enums import AnnouncementSection, AnnouncementVisibility
+from app.shared.enums import AnnouncementSection, AnnouncementType, AnnouncementVisibility
 from app.services.upload_client import UploadServiceError
 
 from .service import AnnouncementService
@@ -45,6 +45,7 @@ async def list_announcements(
     # 422 (matching the public /latest and /history endpoints). Previously
     # these were raw Optional[str], which let garbage reach the repo and
     # crash on `section.value`.
+    type: Optional[AnnouncementType] = Query(default=None),
     section: Optional[AnnouncementSection] = Query(default=None),
     visibility: Optional[AnnouncementVisibility] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
@@ -62,6 +63,7 @@ async def list_announcements(
 ):
     return await service.get_admin_list(
         db,
+        type=type,
         section=section,
         visibility=visibility,
         is_active=is_active,
@@ -140,6 +142,7 @@ def _coerce_lta(value: Optional[str]) -> Optional[bool]:
 async def create_announcement_with_upload(
     file: UploadFile = File(...),
     text: str = Form(..., min_length=1),
+    type: str = Form(default="info"),
     sections: str = Form(..., description="Comma-separated, e.g. LANDING,DASHBOARD"),
     visibility: str = Form(...),
     display_start_at: str = Form(...),
@@ -156,7 +159,7 @@ async def create_announcement_with_upload(
     db: AsyncSession = Depends(get_session),
     _ = Depends(require_admin),
 ):
-    from app.shared.enums import AnnouncementSection, AnnouncementVisibility
+    from app.shared.enums import AnnouncementSection, AnnouncementType, AnnouncementVisibility
     from pydantic import ValidationError
 
     try:
@@ -165,6 +168,7 @@ async def create_announcement_with_upload(
             for s in sections.split(",") if s.strip()
         ]
         visibility_enum = AnnouncementVisibility(visibility)
+        type_enum = AnnouncementType(type)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Invalid parameter value: {e}")
 
@@ -184,6 +188,7 @@ async def create_announcement_with_upload(
         normalized_tiers = _normalize_tier_list(_split_csv(target_data_tiers))
         data = AnnouncementCreate(
             text=text,
+            type=type_enum,
             link=link,
             button_text=button_text,
             image_url=image_url,
@@ -241,6 +246,7 @@ async def update_announcement_with_upload(
     announcement_id: UUID,
     file: UploadFile = File(...),
     text: Optional[str] = Form(default=None),
+    type: Optional[str] = Form(default=None),
     sections: Optional[str] = Form(default=None),
     visibility: Optional[str] = Form(default=None),
     display_start_at: Optional[str] = Form(default=None),
@@ -257,13 +263,18 @@ async def update_announcement_with_upload(
     db: AsyncSession = Depends(get_session),
     _ = Depends(require_admin),
 ):
-    from app.shared.enums import AnnouncementSection, AnnouncementVisibility
+    from app.shared.enums import AnnouncementSection, AnnouncementType, AnnouncementVisibility
     from pydantic import ValidationError
 
     payload: dict = {}
 
     if text is not None:
         payload["text"] = text
+    if type is not None:
+        try:
+            payload["type"] = AnnouncementType(type)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
     if link is not None:
         payload["link"] = link
     if button_text is not None:

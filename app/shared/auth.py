@@ -54,6 +54,62 @@ def _unauthorized(detail: str = "Invalid token") -> HTTPException:
     )
 
 
+def _current_user_from_payload(payload: dict) -> CurrentUser:
+    user_id = str(payload.get("id") or "").strip()
+    if not user_id:
+        raise _unauthorized()
+
+    role = payload.get("role")
+    normalized_role = str(role).strip().upper() if role is not None else None
+
+    return CurrentUser(
+        id=user_id,
+        phoneNumber=payload.get("phoneNumber"),
+        dataTier=normalize_data_tier(payload.get("dataTier")),
+        role=normalized_role or None,
+        liveTreadAccess=_coerce_bool(payload.get("liveTreadAccess")),
+        userDataGroup=payload.get("userDataGroup"),
+        device=payload.get("device"),
+        iat=payload.get("iat"),
+        exp=payload.get("exp"),
+    )
+
+
+def _decode_dev_jwt(token: str, header: dict) -> CurrentUser | None:
+    """Decode a development-only JWT locally without contacting JWKS."""
+    if not settings.DEV_JWT_ENABLED or settings.APP_ENV != "development":
+        return None
+
+    if str(header.get("kid") or "").strip() != settings.DEV_JWT_KID:
+        return None
+
+    if header.get("alg") != "HS256":
+        logger.info("Rejected development JWT with unexpected alg=%r", header.get("alg"))
+        raise _unauthorized()
+
+    if not settings.DEV_JWT_SECRET:
+        logger.error("DEV_JWT_ENABLED is true but DEV_JWT_SECRET is not configured")
+        raise _unauthorized()
+
+    try:
+        payload = jwt.decode(
+            token,
+            key=settings.DEV_JWT_SECRET,
+            algorithms=["HS256"],
+            issuer=settings.DEV_JWT_ISSUER,
+            audience=settings.DEV_JWT_AUDIENCE,
+            leeway=settings.JWT_LEEWAY_SECONDS,
+            options={"require": ["id", "exp", "iat", "iss", "aud"]},
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise _unauthorized("Token expired") from exc
+    except jwt.InvalidTokenError as exc:
+        logger.info("Development JWT validation failed: %s", exc.__class__.__name__)
+        raise _unauthorized() from exc
+
+    return _current_user_from_payload(payload)
+
+
 async def _verification_key(token: str):
     try:
         header = jwt.get_unverified_header(token)
@@ -84,6 +140,15 @@ async def _verification_key(token: str):
 
 
 async def _decode_jwt(token: str) -> CurrentUser:
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.InvalidTokenError as exc:
+        raise _unauthorized() from exc
+
+    dev_user = _decode_dev_jwt(token, header)
+    if dev_user is not None:
+        return dev_user
+
     key = await _verification_key(token)
 
     required_claims = ["id"]
@@ -112,24 +177,7 @@ async def _decode_jwt(token: str) -> CurrentUser:
         logger.info("JWT validation failed: %s", exc.__class__.__name__)
         raise _unauthorized() from exc
 
-    user_id = str(payload.get("id") or "").strip()
-    if not user_id:
-        raise _unauthorized()
-
-    role = payload.get("role")
-    normalized_role = str(role).strip().upper() if role is not None else None
-
-    return CurrentUser(
-        id=user_id,
-        phoneNumber=payload.get("phoneNumber"),
-        dataTier=normalize_data_tier(payload.get("dataTier")),
-        role=normalized_role or None,
-        liveTreadAccess=_coerce_bool(payload.get("liveTreadAccess")),
-        userDataGroup=payload.get("userDataGroup"),
-        device=payload.get("device"),
-        iat=payload.get("iat"),
-        exp=payload.get("exp"),
-    )
+    return _current_user_from_payload(payload)
 
 
 async def get_current_user(

@@ -89,6 +89,17 @@ class Settings(BaseSettings):
     JWT_JWKS_READ_TIMEOUT: float = 5.0
     ADMIN_ROLES: str = "ADMIN,SUPER_ADMIN"
 
+    # Development-only local JWTs (for Swagger/frontend development).
+    # These tokens are verified locally and never use the JWKS endpoint.
+    DEV_JWT_ENABLED: bool = False
+    DEV_JWT_SECRET: Optional[str] = None
+    DEV_JWT_KID: str = "livetse-dev"
+    DEV_JWT_ISSUER: str = "livetse-promotion-dev"
+    DEV_JWT_AUDIENCE: str = "livetse-promotion-api"
+    DEV_JWT_USER_ID: str = "frontend-dev"
+    DEV_JWT_ROLE: str = "ADMIN"
+    DEV_JWT_TTL_DAYS: int = 30
+
     # Upload service
     UPLOAD_SERVICE_URL: str
     UPLOAD_SERVICE_API_KEY: str
@@ -133,6 +144,8 @@ class Settings(BaseSettings):
     @field_validator(
         "DATABASE_URL", "BASE_URL", "UPLOAD_SERVICE_URL", "REDIS_URL",
         "JWT_JWKS_URL", "JWT_PUBLIC_KEY", "JWT_PUBLIC_KEY_PATH",
+        "DEV_JWT_SECRET", "DEV_JWT_KID", "DEV_JWT_ISSUER", "DEV_JWT_AUDIENCE",
+        "DEV_JWT_USER_ID", "DEV_JWT_ROLE",
         "UPLOAD_SERVICE_API_KEY", mode="before",
     )
     @classmethod
@@ -164,6 +177,13 @@ class Settings(BaseSettings):
             raise ValueError("MAX_UPLOAD_SIZE_MB must be between 1 and 100")
         return value
 
+    @field_validator("DEV_JWT_TTL_DAYS")
+    @classmethod
+    def _validate_dev_jwt_ttl(cls, value: int) -> int:
+        if value <= 0 or value > 365:
+            raise ValueError("DEV_JWT_TTL_DAYS must be between 1 and 365")
+        return value
+
     @model_validator(mode="after")
     def _validate_runtime(self) -> "Settings":
         if not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
@@ -178,6 +198,12 @@ class Settings(BaseSettings):
         if self.RATE_LIMIT_ENABLED and self.RATE_LIMIT_BACKEND == "redis":
             if not self.REDIS_ENABLED or not self.REDIS_URL:
                 raise ValueError("Redis rate limiting requires REDIS_ENABLED=true and REDIS_URL")
+
+        if self.DEV_JWT_ENABLED:
+            if self.APP_ENV != "development":
+                raise ValueError("DEV_JWT_ENABLED can only be true when APP_ENV=development")
+            if not self.DEV_JWT_SECRET or len(self.DEV_JWT_SECRET) < 32:
+                raise ValueError("DEV_JWT_SECRET must contain at least 32 characters")
 
         if self.APP_ENV == "production":
             if not (self.JWT_JWKS_URL or self.JWT_PUBLIC_KEY or self.JWT_PUBLIC_KEY_PATH):
